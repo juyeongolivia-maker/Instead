@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover,maximum-scale=1.0,user-scalable=no"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Latte Factor"/>
+<meta name="apple-mobile-web-app-title" content="Instead"/>
 <meta name="theme-color" content="#0f172a"/>
 <title>Instead</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -209,14 +209,35 @@ input[type="range"]::-moz-range-thumb{
 @media(max-height:600px){
   #tab-calc{overflow-y:auto;-webkit-overflow-scrolling:touch;}
 }
+.light-mode {
+  --bg:      #f8fafc;
+  --surface: #ffffff;
+  --border:  #e2e8f0;
+  --text:    #0f172a;
+  --muted:   #64748b;
+  --accent:  #f59e0b;
+  --green:   #10b981;
+  --danger:  #ef4444;
+}
 </style>
 </head>
 <body>
 <div class="shell">
 
   <div class="header">
-    <div class="logo">💸 <span>Latte</span> Factor</div>
+    <div class="logo">💸 <span>Instead</span></div>
     <div style="display:flex; gap:8px; align-items:center;">
+    <button onclick="toggleTheme()" style="
+  padding:5px 10px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--text);
+  font-size:12px;
+  font-weight:700;
+">
+  🌗
+</button>
       <div class="currency-toggle">
         <button id="btnEN" class="active" onclick="setLanguage('en')">EN</button>
         <button id="btnKO" onclick="setLanguage('ko')">KO</button>
@@ -361,7 +382,17 @@ let currency = 'USD';
 let lang = 'en';
 let lastCalc = null;
 const KRW = 1380;
+let theme = 'dark';
 
+function toggleTheme() {
+  if (theme === 'dark') {
+    document.body.classList.add('light-mode');
+    theme = 'light';
+  } else {
+    document.body.classList.remove('light-mode');
+    theme = 'dark';
+  }
+}
 const i18n = {
   en: {
     tabCalc: '💡 Calculate',
