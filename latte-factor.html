@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<!-- iPhone 16/17 Dynamic Island 대응: viewport-fit=cover -->
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover,maximum-scale=1.0,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Latte Factor"/>
+<meta name="theme-color" content="#0f172a"/>
+<title>Latte Factor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:      #0f172a;
+  --surface: #1e293b;
+  --border:  #2d3f55;
+  --text:    #f1f5f9;
+  --muted:   #94a3b8;
+  --accent:  #f59e0b;
+  --green:   #10b981;
+  --danger:  #ef4444;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{
+  background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  height:100%;overflow:hidden;
+}
+
+/* ── 앱 껍데기 ── */
+.shell{
+  display:flex;flex-direction:column;
+  height:100dvh;
+  /* iPhone 16/17 Dynamic Island + 홈 인디케이터 safe area */
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
+  padding-left:env(safe-area-inset-left);
+  padding-right:env(safe-area-inset-right);
+  max-width:430px;margin:0 auto;
+}
+
+/* ── 헤더 ── */
+.header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px 6px;
+  flex-shrink:0;
+}
+.logo{font-size:17px;font-weight:800;letter-spacing:-.3px;}
+.logo span{color:var(--accent);}
+.currency-toggle{
+  display:flex;background:var(--surface);
+  border:1px solid var(--border);border-radius:8px;overflow:hidden;
+}
+.currency-toggle button{
+  padding:5px 11px;background:transparent;border:none;
+  color:var(--muted);font-size:13px;font-weight:700;
+  cursor:pointer;font-family:inherit;
+}
+.currency-toggle button.active{background:var(--accent);color:#0f172a;}
+
+/* ── 탭 바 (3개) ── */
+.tabbar{
+  display:flex;padding:0 16px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.tabbar-btn{
+  flex:1;padding:9px 0;text-align:center;
+  font-size:13px;font-weight:600;color:var(--muted);
+  cursor:pointer;border-bottom:2px solid transparent;
+  transition:all .15s;
+}
+.tabbar-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* ── 탭 패널 ── */
+.tabs-content{flex:1;overflow:hidden;position:relative;}
+.tab-panel{
+  position:absolute;inset:0;
+  padding:12px 16px;
+  display:none;flex-direction:column;gap:8px;
+  overflow:hidden;
+}
+.tab-panel.active{display:flex;}
+#tab-history,#tab-graph{
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+}
+
+/* ── 카드 ── */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:13px;padding:11px 13px;
+}
+
+/* ── 모드 토글 ── */
+.mode-toggle{
+  display:flex;background:var(--surface);
+  border:1px solid var(--border);border-radius:9px;padding:3px;
+  flex-shrink:0;
+}
+.mode-btn{
+  flex:1;padding:7px 0;text-align:center;
+  font-size:13px;font-weight:600;color:var(--muted);
+  border-radius:7px;cursor:pointer;
+}
+.mode-btn.active{background:var(--green);color:#0f172a;}
+
+/* ── 입력 필드 ── */
+.field label{
+  display:block;font-size:11px;color:var(--muted);
+  margin-bottom:4px;font-weight:500;
+}
+input[type="text"],input[type="number"],select{
+  width:100%;padding:9px 11px;
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);
+  font-size:16px;font-family:inherit;
+  -webkit-appearance:none;appearance:none;
+}
+input:focus,select:focus{outline:none;border-color:var(--accent);}
+
+/* ── 한 줄 row ── */
+.row{display:flex;gap:8px;}
+.row .field{flex:1;}
+
+/* ── 카테고리 칩 ── */
+.chips{
+  display:flex;gap:5px;
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;padding-bottom:1px;
+}
+.chips::-webkit-scrollbar{display:none;}
+.chip{
+  flex-shrink:0;padding:5px 10px;
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:999px;font-size:12px;color:var(--muted);
+  cursor:pointer;white-space:nowrap;
+}
+.chip:active{opacity:.7;}
+
+/* ── 기간 ── */
+.year-row{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;}
+.year-row .lbl{font-size:11px;color:var(--muted);}
+.year-row .val{font-size:19px;font-weight:800;color:var(--accent);}
+
+.year-presets{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:7px;}
+.year-chip{
+  padding:8px 0;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;font-size:13px;font-weight:700;
+  color:var(--muted);text-align:center;cursor:pointer;
+}
+.year-chip.active{background:var(--accent);border-color:var(--accent);color:#0f172a;}
+.year-chip:active{opacity:.8;}
+
+input[type="range"]{
+  -webkit-appearance:none;width:100%;height:4px;
+  background:var(--border);border-radius:2px;border:none;padding:0;
+}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:22px;height:22px;
+  background:var(--accent);border-radius:50%;
+  border:3px solid #0f172a;box-shadow:0 2px 6px rgba(0,0,0,.5);
+}
+input[type="range"]::-moz-range-thumb{
+  width:22px;height:22px;background:var(--accent);
+  border-radius:50%;border:3px solid #0f172a;
+}
+.slider-hint{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:3px;}
+
+/* ── 결과 히어로 ── */
+.result-hero{
+  background:linear-gradient(135deg,#f59e0b 0%,#10b981 100%);
+  border-radius:13px;padding:13px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+}
+.rh-left .rh-lbl{font-size:11px;font-weight:600;color:rgba(15,23,42,.7);}
+.rh-left .rh-amt{font-size:30px;font-weight:900;color:#0f172a;letter-spacing:-1px;line-height:1.1;}
+.rh-left .rh-sub{font-size:11px;color:rgba(15,23,42,.65);margin-top:1px;}
+.rh-right{text-align:right;}
+.rh-right .rh-gain-lbl{font-size:10px;color:rgba(15,23,42,.6);}
+.rh-right .rh-gain{font-size:16px;font-weight:800;color:#0f172a;}
+
+/* ── 미니 그리드 ── */
+.mini-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;flex-shrink:0;}
+.mini-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:8px 4px;text-align:center;
+}
+.mini-card .mc-yr{font-size:10px;color:var(--muted);margin-bottom:3px;}
+.mini-card .mc-val{font-size:14px;font-weight:700;color:var(--accent);}
+
+/* ── 버튼 ── */
+.btn-save{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:12px;background:var(--green);color:#0f172a;
+  border:none;border-radius:11px;font-size:15px;font-weight:800;
+  cursor:pointer;font-family:inherit;width:100%;flex-shrink:0;
+}
+.btn-save:active{transform:scale(.98);}
+.btn-danger{
+  width:100%;padding:11px;background:transparent;
+  border:1px solid var(--border);border-radius:10px;
+  color:var(--danger);font-size:14px;font-weight:600;
+  cursor:pointer;font-family:inherit;flex-shrink:0;
+}
+
+/* ── 그래프 탭 ── */
+.chart-wrap{
+  flex:1;min-height:0;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:13px;padding:12px 14px;
+  display:flex;flex-direction:column;
+}
+.chart-wrap h3{font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;}
+.chart-inner{flex:1;min-height:0;position:relative;}
+
+/* ── 기록 탭 ── */
+.total-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:13px;padding:13px 16px;text-align:center;flex-shrink:0;
+}
+.total-card .tc-lbl{font-size:11px;color:var(--muted);}
+.total-card .tc-val{font-size:26px;font-weight:900;color:var(--accent);margin:2px 0;}
+.total-card .tc-fut{font-size:12px;color:var(--green);}
+
+.history-item{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 0;border-bottom:1px solid var(--border);
+}
+.history-item:last-child{border-bottom:none;}
+.hi-info{flex:1;min-width:0;}
+.hi-info .name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.hi-info .amt{font-size:12px;color:var(--accent);margin-top:2px;}
+.hi-info .date{font-size:11px;color:var(--muted);}
+.hi-future{text-align:right;flex-shrink:0;}
+.hi-future .big{font-size:13px;font-weight:700;color:var(--green);}
+.hi-future .lbl{font-size:10px;color:var(--muted);}
+.del-btn{background:transparent;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:4px 5px;flex-shrink:0;}
+.del-btn:active{color:var(--danger);}
+.empty-state{text-align:center;color:var(--muted);font-size:14px;padding:28px 0;line-height:1.7;}
+
+.note{font-size:10px;color:var(--muted);text-align:center;flex-shrink:0;}
+
+/* SE 대응: 입력탭 스크롤 허용 */
+@media(max-height:600px){
+  #tab-calc{overflow-y:auto;-webkit-overflow-scrolling:touch;}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- 헤더 -->
+  <div class="header">
+    <div class="logo">💸 <span>Latte</span> Factor</div>
+    <div class="currency-toggle">
+      <button id="btnUSD" class="active" onclick="setCurrency('USD')">$ USD</button>
+      <button id="btnKRW" onclick="setCurrency('KRW')">₩ KRW</button>
+    </div>
+  </div>
+
+  <!-- 탭 바 -->
+  <div class="tabbar">
+    <div class="tabbar-btn active" data-tab="calc">💡 계산</div>
+    <div class="tabbar-btn" data-tab="graph">📈 그래프</div>
+    <div class="tabbar-btn" data-tab="history">📋 기록</div>
+  </div>
+
+  <div class="tabs-content">
+
+    <!-- ① 계산 탭 (입력 + 결과 한 화면) -->
+    <div class="tab-panel active" id="tab-calc">
+
+      <!-- 모드 -->
+      <div class="mode-toggle">
+        <div class="mode-btn active" data-mode="once">💡 이번 한 번</div>
+        <div class="mode-btn" data-mode="recurring">🔁 반복 절약</div>
+      </div>
+
+      <!-- 항목 + 카테고리 -->
+      <div class="card">
+        <div class="field" style="margin-bottom:7px;">
+          <label>항목 이름</label>
+          <input type="text" id="itemName" placeholder="예: 사고 싶었던 가방" maxlength="40"/>
+        </div>
+        <div class="chips">
+          <span class="chip" data-name="커피"    data-usd="7">☕ 커피</span>
+          <span class="chip" data-name="가방"    data-usd="800">👜 가방</span>
+          <span class="chip" data-name="옷"      data-usd="150">👕 옷</span>
+          <span class="chip" data-name="배달"    data-usd="25">🍱 배달</span>
+          <span class="chip" data-name="구독"    data-usd="15">📺 구독</span>
+          <span class="chip" data-name="충동구매" data-usd="50">🛍 충동</span>
+          <span class="chip" data-name="외식"    data-usd="60">🍽️ 외식</span>
+        </div>
+      </div>
+
+      <!-- 금액 + 수익률 + 빈도 -->
+      <div class="row">
+        <div class="field">
+          <label id="amtLabel">금액 ($)</label>
+          <input type="number" id="amount" value="7" step="1" min="0" inputmode="decimal"/>
+        </div>
+        <div class="field" id="freqField" style="display:none;">
+          <label>빈도</label>
+          <select id="frequency">
+            <option value="365">매일</option>
+            <option value="52" selected>매주</option>
+            <option value="12">매월</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>연 수익률 (%)</label>
+          <input type="number" id="rate" value="10" step="0.5" min="0" inputmode="decimal"/>
+        </div>
+      </div>
+
+      <!-- 기간 -->
+      <div class="card">
+        <div class="year-row">
+          <span class="lbl">투자 기간</span>
+          <span class="val"><span id="yearsLabel">10</span>년</span>
+        </div>
+        <div class="year-presets">
+          <div class="year-chip" data-years="5">5년</div>
+          <div class="year-chip active" data-years="10">10년</div>
+          <div class="year-chip" data-years="20">20년</div>
+          <div class="year-chip" data-years="30">30년</div>
+        </div>
+        <input type="range" id="years" value="10" min="1" max="40" step="1"/>
+        <div class="slider-hint"><span>1년</span><span>미세조정</span><span>40년</span></div>
+      </div>
+
+      <!-- ✦ 결과 히어로 ✦ -->
+      <div class="result-hero">
+        <div class="rh-left">
+          <div class="rh-lbl" id="heroLbl">10년 후 미래가치</div>
+          <div class="rh-amt" id="heroAmt">—</div>
+          <div class="rh-sub" id="heroSub">입력하면 바로 계산돼요</div>
+        </div>
+        <div class="rh-right">
+          <div class="rh-gain-lbl">수익</div>
+          <div class="rh-gain" id="heroGain">—</div>
+        </div>
+      </div>
+
+      <!-- 미니 3칸 -->
+      <div class="mini-grid">
+        <div class="mini-card"><div class="mc-yr">5년 후</div><div class="mc-val" id="y5">—</div></div>
+        <div class="mini-card"><div class="mc-yr">10년 후</div><div class="mc-val" id="y10">—</div></div>
+        <div class="mini-card"><div class="mc-yr">20년 후</div><div class="mc-val" id="y20">—</div></div>
+      </div>
+
+      <!-- 기록 버튼 -->
+      <button class="btn-save" id="saveBtn">✨ 이 절약 기록하기</button>
+
+      <p class="note">* VOO 과거 연평균 ~10% · 이 앱은 시뮬레이션입니다</p>
+    </div>
+
+    <!-- ② 그래프 탭 -->
+    <div class="tab-panel" id="tab-graph">
+      <div class="result-hero" style="flex-shrink:0;">
+        <div class="rh-left">
+          <div class="rh-lbl" id="g-heroLbl">10년 후 미래가치</div>
+          <div class="rh-amt" id="g-heroAmt">—</div>
+          <div class="rh-sub" id="g-heroSub">계산 탭에서 먼저 입력하세요</div>
+        </div>
+        <div class="rh-right">
+          <div class="rh-gain-lbl">수익</div>
+          <div class="rh-gain" id="g-heroGain">—</div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <h3>📈 투자 성장 그래프</h3>
+        <div class="chart-inner">
+          <canvas id="chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ 기록 탭 -->
+    <div class="tab-panel" id="tab-history">
+      <div class="total-card">
+        <div class="tc-lbl">지금까지 총 절약액</div>
+        <div class="tc-val" id="totalSaved">$0</div>
+        <div class="tc-fut" id="totalFuture">20년 후 예상: $0</div>
+      </div>
+      <div class="card" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+        <div id="historyList">
+          <div class="empty-state">아직 기록이 없어요 ✨<br/>계산 탭에서 절약을 기록해보세요</div>
+        </div>
+      </div>
+      <button class="btn-danger" id="clearBtn">모든 기록 삭제</button>
+    </div>
+
+  </div><!-- /tabs-content -->
+</div><!-- /shell -->
+
+<script>
+// ════════════════════════════════════════
+// 상태
+// ════════════════════════════════════════
+let records = [];
+let chartObj = null;
+let mode     = 'once';
+let currency = 'USD';
+let lastCalc = null;
+const KRW = 1380;
+
+// ════════════════════════════════════════
+// 포맷
+// ════════════════════════════════════════
+function fmt(usd) {
+  if (currency === 'KRW') {
+    const w = Math.round(usd * KRW);
+    if (w >= 100000000) return '₩' + (w/100000000).toFixed(1) + '억';
+    if (w >= 10000)     return '₩' + Math.round(w/10000) + '만';
+    return '₩' + w.toLocaleString('ko-KR');
+  }
+  if (usd >= 1000000) return '$' + (usd/1000000).toFixed(2) + 'M';
+  if (usd >= 1000)    return '$' + (usd/1000).toFixed(1) + 'K';
+  return '$' + Math.round(usd).toLocaleString('en-US');
+}
+function fmtExact(usd) {
+  if (currency === 'KRW') return '₩' + Math.round(usd * KRW).toLocaleString('ko-KR');
+  return '$' + usd.toFixed(2);
+}
+
+// ════════════════════════════════════════
+// 계산 수식
+// ════════════════════════════════════════
+function fvLump(p, r, y)          { return p * Math.pow(1 + r/100, y); }
+function fvRec(ppy, r, y, freq)   {
+  const rp = (r/100)/freq, n = y*freq, pmt = ppy/freq;
+  if (rp === 0) return pmt*n;
+  return pmt * ((Math.pow(1+rp, n) - 1) / rp);
+}
+
+function compute() {
+  let rawAmt = parseFloat(document.getElementById('amount').value) || 0;
+  // 항상 USD 기준으로 계산
+  const usdAmt = (currency === 'KRW') ? rawAmt / KRW : rawAmt;
+  const r    = parseFloat(document.getElementById('rate').value)  || 0;
+  const y    = parseInt(document.getElementById('years').value);
+  const freq = parseFloat(document.getElementById('frequency').value);
+
+  let fv5, fv10, fv20, fvMain, principal;
+  const lbls = [], pArr = [], tArr = [];
+
+  if (mode === 'once') {
+    fv5 = fvLump(usdAmt,r,5); fv10 = fvLump(usdAmt,r,10);
+    fv20 = fvLump(usdAmt,r,20); fvMain = fvLump(usdAmt,r,y);
+    principal = usdAmt;
+    for (let i=0;i<=y;i++) { lbls.push(i+'년'); pArr.push(usdAmt); tArr.push(fvLump(usdAmt,r,i)); }
+  } else {
+    const annual = usdAmt * freq;
+    fv5 = fvRec(annual,r,5,freq); fv10 = fvRec(annual,r,10,freq);
+    fv20 = fvRec(annual,r,20,freq); fvMain = fvRec(annual,r,y,freq);
+    principal = annual * y;
+    for (let i=0;i<=y;i++) { lbls.push(i+'년'); pArr.push(annual*i); tArr.push(fvRec(annual,r,i,freq)); }
+  }
+  return { usdAmt, fv5, fv10, fv20, fvMain, principal, gain: fvMain-principal,
+           years: y, lbls, pArr, tArr };
+}
+
+// ════════════════════════════════════════
+// 결과 렌더 (계산탭 + 그래프탭 동기화)
+// ════════════════════════════════════════
+function renderResult() {
+  const c = lastCalc;
+  if (!c) return;
+
+  const heroLbl  = c.years + '년 후 미래가치';
+  const heroAmt  = fmt(c.fvMain);
+  const heroSub  = '원금 ' + fmt(c.principal) + (mode==='recurring' ? ' (총 납입)' : '');
+  const heroGain = '+' + fmt(c.gain);
+
+  // 계산 탭
+  document.getElementById('heroLbl').textContent  = heroLbl;
+  document.getElementById('heroAmt').textContent  = heroAmt;
+  document.getElementById('heroSub').textContent  = heroSub;
+  document.getElementById('heroGain').textContent = heroGain;
+  document.getElementById('y5').textContent  = fmt(c.fv5);
+  document.getElementById('y10').textContent = fmt(c.fv10);
+  document.getElementById('y20').textContent = fmt(c.fv20);
+
+  // 그래프 탭 히어로
+  document.getElementById('g-heroLbl').textContent  = heroLbl;
+  document.getElementById('g-heroAmt').textContent  = heroAmt;
+  document.getElementById('g-heroSub').textContent  = heroSub;
+  document.getElementById('g-heroGain').textContent = heroGain;
+
+  renderChart(c.lbls, c.pArr, c.tArr);
+}
+
+function renderChart(lbls, pArr, tArr) {
+  const ctx = document.getElementById('chart').getContext('2d');
+  if (chartObj) {
+    chartObj.data.labels = lbls;
+    chartObj.data.datasets[0].data = tArr;
+    chartObj.data.datasets[1].data = pArr;
+    chartObj.update('none');
+    return;
+  }
+  chartObj = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: lbls,
+      datasets: [
+        { label:'총 자산', data:tArr,
+          borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.15)',
+          fill:true, tension:.35, pointRadius:0, borderWidth:2.5 },
+        { label:'원금', data:pArr,
+          borderColor:'#10b981', backgroundColor:'transparent',
+          fill:false, tension:0, pointRadius:0, borderWidth:2, borderDash:[5,4] },
+      ],
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      animation:{ duration:350 },
+      plugins:{
+        legend:{ labels:{ color:'#94a3b8', font:{size:11}, boxWidth:18 }, position:'bottom' },
+        tooltip:{ callbacks:{ label:(c)=> c.dataset.label+': '+fmt(c.parsed.y) } },
+      },
+      scales:{
+        x:{ ticks:{ color:'#64748b', font:{size:10}, maxTicksLimit:8 }, grid:{ color:'rgba(148,163,184,.07)' } },
+        y:{ ticks:{ color:'#64748b', font:{size:10}, callback:(v)=>fmt(v) }, grid:{ color:'rgba(148,163,184,.07)' } },
+      },
+    },
+  });
+}
+
+// ════════════════════════════════════════
+// 기록 탭
+// ════════════════════════════════════════
+function renderHistory() {
+  const rate = parseFloat(document.getElementById('rate').value) || 10;
+  const list = document.getElementById('historyList');
+  const now  = Date.now();
+  if (records.length === 0) {
+    list.innerHTML = '<div class="empty-state">아직 기록이 없어요 ✨<br/>계산 탭에서 절약을 기록해보세요</div>';
+    document.getElementById('totalSaved').textContent = fmt(0);
+    document.getElementById('totalFuture').textContent = '20년 후 예상: ' + fmt(0);
+    return;
+  }
+  let total = 0, totalFV = 0;
+  const sorted = [...records].sort((a,b) => b.date - a.date);
+  list.innerHTML = sorted.map(item => {
+    const elapsed = (now - item.date) / (1000*60*60*24*365.25);
+    const fv = fvLump(item.usdAmt, rate, Math.max(0, 20-elapsed));
+    total += item.usdAmt; totalFV += fv;
+    const d = new Date(item.date);
+    const ds = `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+    const safe = (item.name||'절약').replace(/[<>&"]/g, s=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[s]));
+    return `<div class="history-item">
+      <div class="hi-info">
+        <div class="name">${safe}</div>
+        <div class="amt">${fmtExact(item.usdAmt)}</div>
+        <div class="date">${ds}</div>
+      </div>
+      <div class="hi-future">
+        <div class="big">→ ${fmt(fv)}</div>
+        <div class="lbl">20년 후</div>
+      </div>
+      <button class="del-btn" data-id="${item.id}">✕</button>
+    </div>`;
+  }).join('');
+  document.getElementById('totalSaved').textContent = fmt(total);
+  document.getElementById('totalFuture').textContent = '20년 후 예상: ' + fmt(totalFV);
+  list.querySelectorAll('.del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      records = records.filter(r => String(r.id) !== String(btn.dataset.id));
+      save(); renderHistory();
+    });
+  });
+}
+
+// ════════════════════════════════════════
+// 스토리지
+// ════════════════════════════════════════
+function load() { try { records = JSON.parse(localStorage.getItem('lf2') || '[]'); } catch { records=[]; } }
+function save() { localStorage.setItem('lf2', JSON.stringify(records)); }
+
+// ════════════════════════════════════════
+// UI 이벤트
+// ════════════════════════════════════════
+// 탭 이동
+document.querySelectorAll('.tabbar-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.tab;
+    document.querySelectorAll('.tabbar-btn').forEach(b => b.classList.toggle('active', b.dataset.tab===t));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id==='tab-'+t));
+    if (t==='history') renderHistory();
+    if (t==='graph' && lastCalc) renderResult();
+  });
+});
+
+// 모드 토글
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    mode = btn.dataset.mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode===mode));
+    document.getElementById('freqField').style.display = mode==='recurring' ? 'block' : 'none';
+    recalc();
+  });
+});
+
+// 카테고리 칩
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.getElementById('itemName').value = chip.dataset.name;
+    const usd = parseFloat(chip.dataset.usd);
+    document.getElementById('amount').value = currency==='KRW' ? Math.round(usd * KRW / 1000) * 1000 : usd;
+    recalc();
+  });
+});
+
+// 연도 프리셋
+document.querySelectorAll('.year-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const y = parseInt(chip.dataset.years);
+    document.getElementById('years').value = y;
+    syncYear(y); recalc();
+  });
+});
+document.getElementById('years').addEventListener('input', () => {
+  const y = parseInt(document.getElementById('years').value);
+  syncYear(y); recalc();
+});
+function syncYear(y) {
+  document.getElementById('yearsLabel').textContent = y;
+  document.querySelectorAll('.year-chip').forEach(c => c.classList.toggle('active', parseInt(c.dataset.years)===y));
+}
+
+// 입력 필드 실시간 계산
+['amount','rate'].forEach(id => document.getElementById(id).addEventListener('input', recalc));
+document.getElementById('frequency').addEventListener('change', recalc);
+
+// 화폐 전환
+function setCurrency(c) {
+  currency = c;
+  document.getElementById('btnUSD').classList.toggle('active', c==='USD');
+  document.getElementById('btnKRW').classList.toggle('active', c==='KRW');
+  document.getElementById('amtLabel').textContent = c==='KRW' ? '금액 (₩)' : '금액 ($)';
+  // 금액 필드 환산
+  const cur = parseFloat(document.getElementById('amount').value) || 0;
+  if (c==='KRW' && cur < 10000) document.getElementById('amount').value = Math.round(cur * KRW / 1000) * 1000;
+  if (c==='USD' && cur > 1000)  document.getElementById('amount').value = (cur / KRW).toFixed(2);
+  recalc();
+  renderHistory();
+}
+
+// 저장
+document.getElementById('saveBtn').addEventListener('click', () => {
+  if (!lastCalc || lastCalc.usdAmt <= 0) return;
+  records.push({
+    id: Date.now() + Math.random(),
+    name: document.getElementById('itemName').value.trim() || '이름 없는 절약',
+    usdAmt: lastCalc.usdAmt,
+    date: Date.now(), type: mode,
+  });
+  save();
+  const btn = document.getElementById('saveBtn');
+  btn.textContent = '✅ 기록 완료!';
+  btn.style.background = '#0ea5e9';
+  setTimeout(() => { btn.textContent = '✨ 이 절약 기록하기'; btn.style.background = ''; }, 1200);
+});
+
+// 전체 삭제
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (confirm('모든 기록을 삭제할까요?')) { records=[]; save(); renderHistory(); }
+});
+
+// 계산 실행
+function recalc() {
+  lastCalc = compute();
+  renderResult();
+}
+
+// ════════════════════════════════════════
+// 초기화
+// ════════════════════════════════════════
+load();
+syncYear(10);
+recalc();
+</script>
+</body>
+</html>
