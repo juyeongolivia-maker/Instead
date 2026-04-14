@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,8 +8,7 @@ import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Switch } from "@/components/ui/switch"
-import { Trash2, Moon, Sun, Languages, DollarSign, Wallet, Repeat, Sparkles } from "lucide-react"
+import { Trash2, Moon, Sun, Wallet, Repeat, Sparkles } from "lucide-react"
 import {
   Area,
   AreaChart,
@@ -318,43 +317,42 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 px-4 pb-8 pt-4">
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-3 px-4 pb-8 pt-4">
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">💸 {t.appName}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
-          </div>
-          <Card className="p-3 flex-shrink-0">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Languages className="h-3.5 w-3.5" />{t.language}
-                </div>
-                <div className="flex gap-1">
-                  <Button variant={lang === "en" ? "default" : "outline"} size="sm" onClick={() => setLang("en")}>EN</Button>
-                  <Button variant={lang === "ko" ? "default" : "outline"} size="sm" onClick={() => setLang("ko")}>KO</Button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <DollarSign className="h-3.5 w-3.5" />{t.currency}
-                </div>
-                <div className="flex gap-1">
-                  <Button variant={currency === "USD" ? "default" : "outline"} size="sm" onClick={() => handleCurrencyChange("USD")}>USD</Button>
-                  <Button variant={currency === "KRW" ? "default" : "outline"} size="sm" onClick={() => handleCurrencyChange("KRW")}>KRW</Button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {isLightMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-                  {t.useLightMode}
-                </div>
-                <Switch checked={isLightMode} onCheckedChange={setIsLightMode} />
-              </div>
+        {/* Header — compact single row */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-black tracking-tight">💸 {t.appName}</h1>
+          <div className="flex items-center gap-1.5">
+            {/* Language */}
+            <div className="flex rounded-md border border-border overflow-hidden">
+              <button
+                onClick={() => setLang("en")}
+                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              >EN</button>
+              <button
+                onClick={() => setLang("ko")}
+                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${lang === "ko" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              >KO</button>
             </div>
-          </Card>
+            {/* Currency */}
+            <div className="flex rounded-md border border-border overflow-hidden">
+              <button
+                onClick={() => handleCurrencyChange("USD")}
+                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${currency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              >$</button>
+              <button
+                onClick={() => handleCurrencyChange("KRW")}
+                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${currency === "KRW" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              >₩</button>
+            </div>
+            {/* Dark/Light */}
+            <button
+              onClick={() => setIsLightMode(v => !v)}
+              className="rounded-md border border-border p-1.5 text-muted-foreground"
+            >
+              {isLightMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -366,7 +364,7 @@ export default function App() {
           </TabsList>
 
           {/* ── Calculate Tab ── */}
-          <TabsContent value="calculate" className="mt-0 space-y-4">
+          <TabsContent value="calculate" className="mt-0 space-y-3">
             {/* Mode toggle */}
             <div className="grid grid-cols-2 gap-2">
               <Button variant={mode === "once" ? "default" : "outline"} className="w-full" onClick={() => setMode("once")}>
@@ -379,27 +377,20 @@ export default function App() {
 
             {/* Item name + presets */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">{t.itemName}</CardTitle>
-                <CardDescription>{t.resultsHint}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="itemName">{t.itemName}</Label>
-                  <Input
-                    id="itemName"
-                    value={itemName}
-                    onChange={e => setItemName(e.target.value)}
-                    placeholder={t.itemPlaceholder}
-                    maxLength={40}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
+              <CardContent className="pt-4 space-y-3">
+                <Input
+                  id="itemName"
+                  value={itemName}
+                  onChange={e => setItemName(e.target.value)}
+                  placeholder={t.itemPlaceholder}
+                  maxLength={40}
+                />
+                <div className="flex flex-wrap gap-1.5">
                   {presetItems.map(item => (
                     <Badge
                       key={item.key}
                       variant="secondary"
-                      className="cursor-pointer rounded-full px-3 py-1.5 text-sm"
+                      className="cursor-pointer rounded-full px-2.5 py-1 text-xs"
                       onClick={() => {
                         setItemName(t.presets[item.key])
                         setAmount(currency === "KRW"
@@ -414,25 +405,26 @@ export default function App() {
               </CardContent>
             </Card>
 
-            {/* Amount + rate + frequency */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Card>
-                <CardContent className="space-y-4 pt-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">{currency === "KRW" ? t.amountKRW : t.amountUSD}</Label>
+            {/* Amount + rate + frequency — compact inline */}
+            <Card>
+              <CardContent className="pt-4 pb-4">
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-xs">{currency === "KRW" ? t.amountKRW : t.amountUSD}</Label>
                     <Input
                       id="amount"
                       type="number"
                       inputMode="decimal"
                       value={amount}
                       onChange={e => setAmount(e.target.value)}
+                      className="h-9"
                     />
                   </div>
                   {mode === "recurring" && (
-                    <div className="space-y-2">
-                      <Label>{t.frequency}</Label>
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">{t.frequency}</Label>
                       <Select value={frequency} onValueChange={v => setFrequency(v as FrequencyValue)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="365">{t.daily}</SelectItem>
                           <SelectItem value="52">{t.weekly}</SelectItem>
@@ -441,60 +433,52 @@ export default function App() {
                       </Select>
                     </div>
                   )}
-                  <div className="space-y-2">
-                    <Label htmlFor="rate">{t.annualReturn}</Label>
+                  <div className="w-20 space-y-1">
+                    <Label className="text-xs">{t.annualReturn}</Label>
                     <Input
                       id="rate"
                       type="number"
                       inputMode="decimal"
                       value={rate}
                       onChange={e => setRate(e.target.value)}
+                      className="h-9"
                     />
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
 
-              {/* Years */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">{t.investmentPeriod}</CardTitle>
-                  <CardDescription className="text-2xl font-black text-foreground">
-                    {years} {t.years}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Slider
-                    value={[years]}
-                    min={1} max={40} step={1}
-                    onValueChange={v => setYears(v[0] ?? 10)}
-                  />
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[5, 10, 20, 30].map(v => (
-                      <Button
-                        key={v}
-                        variant={years === v ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setYears(v)}
-                      >
-                        {lang === "ko" ? `${v}년` : `${v}Y`}
-                      </Button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            {/* Years — compact */}
+            <Card>
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-xs">{t.investmentPeriod}</Label>
+                  <span className="text-lg font-black">{years} {t.years}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5 mb-2">
+                  {[5, 10, 20, 30].map(v => (
+                    <Button key={v} variant={years === v ? "default" : "outline"} size="sm"
+                      className="h-8 text-xs" onClick={() => setYears(v)}>
+                      {lang === "ko" ? `${v}년` : `${v}Y`}
+                    </Button>
+                  ))}
+                </div>
+                <Slider value={[years]} min={1} max={40} step={1}
+                  onValueChange={v => setYears(v[0] ?? 10)} />
+              </CardContent>
+            </Card>
 
             {/* Result hero */}
             <Card className="border-amber-500/40 bg-gradient-to-br from-amber-100 via-orange-50 to-emerald-100 dark:from-amber-500/20 dark:via-orange-500/10 dark:to-emerald-500/20">
-              <CardContent className="flex items-center justify-between gap-4 p-6">
+              <CardContent className="flex items-center justify-between gap-4 px-5 py-4">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{heroLabel}</div>
-                  <div className="mt-2 text-4xl font-black tracking-tight">{fmt(calc.fvMain)}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">{heroSub}</div>
+                  <div className="mt-1 text-3xl font-black tracking-tight">{fmt(calc.fvMain)}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{heroSub}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.gain}</div>
-                  <div className="mt-2 text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                  <div className="mt-1 text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
                     +{fmt(calc.gain)}
                   </div>
                 </div>
@@ -502,23 +486,23 @@ export default function App() {
             </Card>
 
             {/* Mini grid */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               {[
                 { label: t.after5, value: calc.fv5 },
                 { label: t.after10, value: calc.fv10 },
                 { label: t.after20, value: calc.fv20 },
               ].map(item => (
                 <Card key={item.label}>
-                  <CardContent className="p-4 text-center">
+                  <CardContent className="p-3 text-center">
                     <div className="text-xs text-muted-foreground">{item.label}</div>
-                    <div className="mt-1.5 text-lg font-bold text-amber-600 dark:text-amber-400">{fmt(item.value)}</div>
+                    <div className="mt-1 text-base font-bold text-amber-600 dark:text-amber-400">{fmt(item.value)}</div>
                   </CardContent>
                 </Card>
               ))}
             </div>
 
             {/* Save button */}
-            <Button className="w-full" size="lg" onClick={saveRecord}>
+            <Button className="w-full" onClick={saveRecord}>
               <Wallet className="mr-2 h-4 w-4" />
               {saveFlash ? t.saved : t.saveRecord}
             </Button>
