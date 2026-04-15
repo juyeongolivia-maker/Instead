@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Trash2, Moon, Sun, Wallet, Repeat, Sparkles } from "lucide-react"
+import { Trash2, Moon, Sun, Wallet, Repeat, Sparkles, Plus, ArrowLeft } from "lucide-react"
 import {
   Area,
   AreaChart,
@@ -25,6 +25,7 @@ type Currency = "USD" | "KRW"
 type Lang = "en" | "ko"
 type Mode = "once" | "recurring"
 type FrequencyValue = "365" | "52" | "12"
+type View = "list" | "calculator"
 type RecordItem = {
   id: string
   name: string
@@ -67,19 +68,20 @@ const i18n = {
     after5: "After 5Y",
     after10: "After 10Y",
     after20: "After 20Y",
-    saveRecord: "Save this record",
+    saveRecord: "Save",
     saved: "Saved!",
-    totalSaved: "Total saved so far",
+    totalSaved: "Total saved",
     projected20: "Projected in 20 years",
-    noRecords: "No records yet. Save one from the calculator tab.",
+    noRecords: "No savings yet.\nTap + to add your first one.",
     deleteAll: "Delete all records",
     confirmDeleteAll: "Delete all records?",
     unnamed: "Unnamed saving",
     after20Label: "After 20Y",
-    note: "VOO historical average is ~10%/yr. This app is a simulation for motivation only.",
+    note: "VOO historical average is ~10%/yr. Simulation only.",
     useLightMode: "Light mode",
     language: "Language",
     currency: "Currency",
+    newSaving: "New saving",
     presets: {
       coffee: "Coffee",
       bag: "Bag",
@@ -120,19 +122,20 @@ const i18n = {
     after5: "5년 후",
     after10: "10년 후",
     after20: "20년 후",
-    saveRecord: "이 절약 기록하기",
-    saved: "기록 완료!",
-    totalSaved: "지금까지 총 절약액",
+    saveRecord: "저장",
+    saved: "저장 완료!",
+    totalSaved: "총 절약액",
     projected20: "20년 후 예상",
-    noRecords: "아직 기록이 없어요. 계산 탭에서 하나 저장해보세요.",
+    noRecords: "아직 기록이 없어요.\n+ 버튼으로 첫 절약을 추가해보세요.",
     deleteAll: "모든 기록 삭제",
     confirmDeleteAll: "모든 기록을 삭제할까요?",
     unnamed: "이름 없는 절약",
     after20Label: "20년 후",
-    note: "VOO 과거 연평균은 약 10% 수준입니다. 이 앱은 동기부여용 시뮬레이션입니다.",
+    note: "VOO 과거 연평균 약 10%. 동기부여용 시뮬레이션입니다.",
     useLightMode: "라이트 모드",
     language: "언어",
     currency: "통화",
+    newSaving: "새 절약 추가",
     presets: {
       coffee: "커피",
       bag: "가방",
@@ -178,6 +181,7 @@ export default function App() {
   const [years, setYears] = useState(10)
   const [records, setRecords] = useState<RecordItem[]>([])
   const [saveFlash, setSaveFlash] = useState(false)
+  const [view, setView] = useState<View>("list")
 
   const t = i18n[lang]
 
@@ -299,7 +303,10 @@ export default function App() {
       type: mode,
     }, ...prev])
     setSaveFlash(true)
-    setTimeout(() => setSaveFlash(false), 1200)
+    setTimeout(() => {
+      setSaveFlash(false)
+      setView("list")
+    }, 800)
   }
 
   function deleteRecord(id: string) {
@@ -315,52 +322,121 @@ export default function App() {
     : `${t.futureValueIn} ${years} ${t.years}`
   const heroSub = `${t.principal} ${fmt(calc.principal)}${mode === "recurring" ? ` (${t.totalContributed})` : ""}`
 
+  // ── Shared header ──
+  const Header = ({ showBack = false }: { showBack?: boolean }) => (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        {showBack ? (
+          <button onClick={() => setView("list")} className="rounded-md border border-border p-1.5 text-muted-foreground">
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        <h1 className="text-xl font-black tracking-tight">💸 {t.appName}</h1>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <div className="flex rounded-md border border-border overflow-hidden">
+          <button onClick={() => setLang("en")} className={`px-2.5 py-1 text-xs font-semibold transition-colors ${lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>EN</button>
+          <button onClick={() => setLang("ko")} className={`px-2.5 py-1 text-xs font-semibold transition-colors ${lang === "ko" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>KO</button>
+        </div>
+        <div className="flex rounded-md border border-border overflow-hidden">
+          <button onClick={() => handleCurrencyChange("USD")} className={`px-2.5 py-1 text-xs font-semibold transition-colors ${currency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>$</button>
+          <button onClick={() => handleCurrencyChange("KRW")} className={`px-2.5 py-1 text-xs font-semibold transition-colors ${currency === "KRW" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>₩</button>
+        </div>
+        <button onClick={() => setIsLightMode(v => !v)} className="rounded-md border border-border p-1.5 text-muted-foreground">
+          {isLightMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+    </div>
+  )
+
+  // ── LIST VIEW ──
+  if (view === "list") {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-3 px-4 pb-24 pt-4">
+          <Header />
+
+          {/* Summary card */}
+          {historySummary.enriched.length > 0 && (
+            <Card className="border-amber-500/40 bg-gradient-to-br from-amber-100 via-orange-50 to-emerald-100 dark:from-amber-500/20 dark:via-orange-500/10 dark:to-emerald-500/20">
+              <CardContent className="flex items-center justify-between gap-4 px-5 py-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.totalSaved}</div>
+                  <div className="mt-1 text-3xl font-black tracking-tight">{fmt(historySummary.totalSaved)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.projected20}</div>
+                  <div className="mt-1 text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{fmt(historySummary.projected)}</div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Records list */}
+          {historySummary.enriched.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
+              <div className="text-5xl">💸</div>
+              <p className="whitespace-pre-line text-sm text-muted-foreground">{t.noRecords}</p>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="space-y-0 pt-4 pb-2">
+                {historySummary.enriched.map((item, index) => {
+                  const d = new Date(item.date)
+                  const ds = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`
+                  return (
+                    <div key={item.id}>
+                      <div className="flex items-center justify-between gap-3 py-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-semibold">{item.name}</div>
+                          <div className="text-sm text-amber-600 dark:text-amber-400">{fmtExact(item.usdAmt)}</div>
+                          <div className="text-xs text-muted-foreground">{ds}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="font-semibold text-emerald-600 dark:text-emerald-400">→ {fmt(item.future)}</div>
+                          <div className="text-xs text-muted-foreground">{t.after20Label}</div>
+                        </div>
+                        <Button variant="ghost" size="icon" className="shrink-0" onClick={() => deleteRecord(item.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {index < historySummary.enriched.length - 1 && <Separator />}
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
+
+          {historySummary.enriched.length > 0 && (
+            <Button variant="ghost" className="w-full text-xs text-muted-foreground" onClick={clearAll}>
+              {t.deleteAll}
+            </Button>
+          )}
+        </div>
+
+        {/* Floating + button */}
+        <button
+          onClick={() => setView("calculator")}
+          className="fixed bottom-8 right-1/2 translate-x-1/2 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
+          style={{ maxWidth: "calc(50% + 28px)" }}
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      </div>
+    )
+  }
+
+  // ── CALCULATOR VIEW ──
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-3 px-4 pb-8 pt-4">
+        <Header showBack />
 
-        {/* Header — compact single row */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-black tracking-tight">💸 {t.appName}</h1>
-          <div className="flex items-center gap-1.5">
-            {/* Language */}
-            <div className="flex rounded-md border border-border overflow-hidden">
-              <button
-                onClick={() => setLang("en")}
-                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >EN</button>
-              <button
-                onClick={() => setLang("ko")}
-                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${lang === "ko" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >KO</button>
-            </div>
-            {/* Currency */}
-            <div className="flex rounded-md border border-border overflow-hidden">
-              <button
-                onClick={() => handleCurrencyChange("USD")}
-                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${currency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >$</button>
-              <button
-                onClick={() => handleCurrencyChange("KRW")}
-                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${currency === "KRW" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >₩</button>
-            </div>
-            {/* Dark/Light */}
-            <button
-              onClick={() => setIsLightMode(v => !v)}
-              className="rounded-md border border-border p-1.5 text-muted-foreground"
-            >
-              {isLightMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <Tabs defaultValue="calculate" className="flex flex-1 flex-col gap-4">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="calculate" className="flex flex-1 flex-col gap-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="calculate">{t.calculate}</TabsTrigger>
             <TabsTrigger value="graph">{t.graph}</TabsTrigger>
-            <TabsTrigger value="history">{t.history}</TabsTrigger>
           </TabsList>
 
           {/* ── Calculate Tab ── */}
@@ -386,7 +462,7 @@ export default function App() {
                   maxLength={40}
                   className="h-8 text-sm"
                 />
-                <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none" style={{ WebkitOverflowScrolling: "touch" }}>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ WebkitOverflowScrolling: "touch" }}>
                   {presetItems.map(item => (
                     <Badge
                       key={item.key}
@@ -406,7 +482,7 @@ export default function App() {
               </CardContent>
             </Card>
 
-            {/* Amount + rate + frequency — compact inline */}
+            {/* Amount + rate + frequency */}
             <Card>
               <CardContent className="pt-4 pb-4">
                 <div className="flex gap-2 items-end">
@@ -449,7 +525,7 @@ export default function App() {
               </CardContent>
             </Card>
 
-            {/* Years — compact */}
+            {/* Years */}
             <Card>
               <CardContent className="pt-3 pb-3">
                 <div className="flex items-center justify-between mb-2">
@@ -550,57 +626,6 @@ export default function App() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* ── History Tab ── */}
-          <TabsContent value="history" className="mt-0 space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t.totalSaved}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-4xl font-black tracking-tight">{fmt(historySummary.totalSaved)}</div>
-                <div className="mt-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                  {t.projected20}: {fmt(historySummary.projected)}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="space-y-4 pt-6">
-                {historySummary.enriched.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-muted-foreground">{t.noRecords}</div>
-                ) : (
-                  historySummary.enriched.map((item, index) => {
-                    const d = new Date(item.date)
-                    const ds = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`
-                    return (
-                      <div key={item.id}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate font-semibold">{item.name}</div>
-                            <div className="text-sm text-amber-600 dark:text-amber-400">{fmtExact(item.usdAmt)}</div>
-                            <div className="text-xs text-muted-foreground">{ds}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-semibold text-emerald-600 dark:text-emerald-400">→ {fmt(item.future)}</div>
-                            <div className="text-xs text-muted-foreground">{t.after20Label}</div>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => deleteRecord(item.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        {index < historySummary.enriched.length - 1 && <Separator className="mt-4" />}
-                      </div>
-                    )
-                  })
-                )}
-              </CardContent>
-            </Card>
-
-            <Button variant="destructive" className="w-full" onClick={clearAll}>
-              {t.deleteAll}
-            </Button>
           </TabsContent>
         </Tabs>
       </div>
