@@ -377,20 +377,21 @@ export default function App() {
 
             {/* Item name + presets */}
             <Card>
-              <CardContent className="pt-4 space-y-3">
+              <CardContent className="px-3 pt-3 pb-3 space-y-2">
                 <Input
                   id="itemName"
                   value={itemName}
                   onChange={e => setItemName(e.target.value)}
                   placeholder={t.itemPlaceholder}
                   maxLength={40}
+                  className="h-8 text-sm"
                 />
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none" style={{ WebkitOverflowScrolling: "touch" }}>
                   {presetItems.map(item => (
                     <Badge
                       key={item.key}
                       variant="secondary"
-                      className="cursor-pointer rounded-full px-2.5 py-1 text-xs"
+                      className="cursor-pointer rounded-full px-2 py-0.5 text-xs whitespace-nowrap flex-shrink-0"
                       onClick={() => {
                         setItemName(t.presets[item.key])
                         setAmount(currency === "KRW"
@@ -398,7 +399,7 @@ export default function App() {
                           : String(item.usd))
                       }}
                     >
-                      <span className="mr-1">{item.emoji}</span>{t.presets[item.key]}
+                      <span className="mr-0.5">{item.emoji}</span>{t.presets[item.key]}
                     </Badge>
                   ))}
                 </div>
