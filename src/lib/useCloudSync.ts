@@ -76,20 +76,23 @@ export function useCloudSync(user: User | null, opts: Options) {
             rememberWritten(remoteBlob)
             // Detect "freshly signed in" — localStorage was cleared/defaults (no real user data).
             // In that case we must pull remote, not push local up (which would wipe Firestore).
-            const localLooksEmpty = (() => {
-              if (!localRaw) return true
+            const hasRealData = (blob: string | null) => {
+              if (!blob) return false
               try {
-                const parsed = JSON.parse(localRaw)
-                const noRecords = !Array.isArray(parsed.records) || parsed.records.length === 0
-                const noGoal = !parsed.goal
-                return noRecords && noGoal
+                const parsed = JSON.parse(blob)
+                const hasRecords = Array.isArray(parsed.records) && parsed.records.length > 0
+                const hasGoal = !!parsed.goal
+                return hasRecords || hasGoal
               } catch {
-                return true
+                return false
               }
-            })()
-            if (localLooksEmpty && localRaw !== remoteBlob) {
-              // Only reload if remote is genuinely different. If both sides look empty with
-              // identical bytes, we were already in sync — reloading would loop forever.
+            }
+            const localLooksEmpty = !hasRealData(localRaw)
+            const remoteHasRealData = hasRealData(remoteBlob)
+            if (localLooksEmpty && remoteHasRealData && localRaw !== remoteBlob) {
+              // Local is empty/defaults AND remote has meaningful user data — pull remote.
+              // If remote is also empty (just settings), skip this branch: re-serialization
+              // noise (e.g. krwRateAutoFetchedAt updates) would otherwise cause a reload loop.
               lastKnownBlobRef.current = remoteBlob
               localStorage.setItem(storageKey, remoteBlob)
               onRemoteApplied?.()
