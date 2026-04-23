@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, CloudOff, RefreshCw } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut } from "lucide-react"
 import { useAuth } from "@/lib/useAuth"
 import { useCloudSync } from "@/lib/useCloudSync"
 import type { LucideIcon } from "lucide-react"
@@ -255,9 +255,9 @@ export default function App() {
   const [goalEditorOpen, setGoalEditorOpen] = useState(false)
   const [goalTargetInvalid, setGoalTargetInvalid] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  // Auth + cloud sync
+  // Auth + cloud sync (status not surfaced in UI; syncing runs silently)
   const auth = useAuth()
-  const cloud = useCloudSync(auth.user, {
+  useCloudSync(auth.user, {
     storageKey: STORAGE_KEY,
     onRemoteApplied: () => {
       // Remote state replaced localStorage; reload so every useState re-hydrates from it
@@ -680,24 +680,7 @@ export default function App() {
         </h1>
       </div>
       <div className="flex items-center gap-1.5">
-        {/* Sync status: only shown when actively syncing or error. Silent when synced/idle. */}
-        {auth.user && (cloud.status === "syncing" || cloud.status === "error") && (
-          <span
-            className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[10px] text-muted-foreground"
-            title={cloud.lastSyncedAt ? new Date(cloud.lastSyncedAt).toLocaleTimeString() : ""}
-          >
-            {cloud.status === "syncing" ? (
-              <RefreshCw className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-            ) : (
-              <CloudOff className="h-3 w-3 text-destructive" strokeWidth={1.5} />
-            )}
-            <span className="hidden sm:inline">
-              {cloud.status === "syncing"
-                ? (lang === "ko" ? "동기화 중" : "Syncing")
-                : (lang === "ko" ? "오류" : "Error")}
-            </span>
-          </span>
-        )}
+        {/* Sync runs silently in the background — no UI indicator */}
         {/* Account button */}
         {auth.configured && (
           <div className="relative">
