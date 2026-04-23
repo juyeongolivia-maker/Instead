@@ -3,7 +3,7 @@
 // - On local changes: debounced write to Firestore.
 // - On remote changes (other device): onSnapshot updates localStorage; caller reload re-hydrates state.
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore"
 import type { User } from "firebase/auth"
 import { firebaseDb } from "./firebase"
@@ -35,6 +35,14 @@ export function useCloudSync(user: User | null, opts: Options) {
     if (recentWrittenRef.current.length > 10) recentWrittenRef.current.shift()
   }
   const wasRecentlyWritten = (blob: string) => recentWrittenRef.current.includes(blob)
+  // Gate: don't allow local→remote writes until the initial getDoc has completed.
+  // Otherwise the watch interval can push empty defaults to Firestore before we've
+  // seen the user's real remote data, wiping it out.
+  const initialSyncCompleteRef = useRef(false)
+  // Keep the latest user in a ref so flush() (called from outside, e.g. before signOut)
+  // can always see the current user even though it's a stable callback.
+  const userRef = useRef<User | null>(user)
+  userRef.current = user
   const statusRef = useRef<SyncStatus>("idle")
   // Dedupe: only actually update status if it changed
   const setStatus = (s: SyncStatus) => {
@@ -47,9 +55,11 @@ export function useCloudSync(user: User | null, opts: Options) {
   useEffect(() => {
     if (!user || !firebaseDb) {
       setStatus("idle")
+      initialSyncCompleteRef.current = false
       return
     }
     setStatus("loading")
+    initialSyncCompleteRef.current = false
     const ref = doc(firebaseDb, "users", user.uid, "app", "state")
     let unsub: (() => void) | null = null
     let cancelled = false
@@ -120,6 +130,8 @@ export function useCloudSync(user: User | null, opts: Options) {
       }
 
       if (cancelled) return
+      // Initial sync complete — safe to allow local→remote writes now.
+      initialSyncCompleteRef.current = true
       // Subscribe to live updates (multi-device realtime)
       unsub = onSnapshot(
         ref,
@@ -162,6 +174,10 @@ export function useCloudSync(user: User | null, opts: Options) {
     if (!user || !firebaseDb) return
     const ref = doc(firebaseDb, "users", user.uid, "app", "state")
     const interval = setInterval(() => {
+      // Don't write until the initial getDoc has resolved. Otherwise we'd upload
+      // whatever defaults React rendered before we fetched the user's real data,
+      // racing the getDoc and potentially wiping their Firestore blob.
+      if (!initialSyncCompleteRef.current) return
       const current = localStorage.getItem(storageKey)
       if (!current) return
       // If current matches what we already know (either we wrote it, or we received it), skip
@@ -202,5 +218,31 @@ export function useCloudSync(user: User | null, opts: Options) {
     }
   }, [user, storageKey])
 
-  return { status, lastSyncedAt }
+  // Immediately write any pending local change to Firestore. Call this before
+  // sign-out to guarantee the user's last edit is saved (debounce would otherwise
+  // be cancelled by the effect cleanup when auth.user becomes null).
+  const flush = useCallback(async () => {
+    const u = userRef.current
+    if (!u || !firebaseDb) return
+    if (!initialSyncCompleteRef.current) return
+    if (writeTimer.current) {
+      clearTimeout(writeTimer.current)
+      writeTimer.current = null
+    }
+    const latest = localStorage.getItem(storageKey)
+    if (!latest) return
+    if (latest === lastKnownBlobRef.current) return
+    const ref = doc(firebaseDb, "users", u.uid, "app", "state")
+    const before = lastKnownBlobRef.current
+    lastKnownBlobRef.current = latest
+    rememberWritten(latest)
+    try {
+      await setDoc(ref, { blob: latest, updatedAt: serverTimestamp() })
+      setLastSyncedAt(Date.now())
+    } catch {
+      lastKnownBlobRef.current = before
+    }
+  }, [storageKey])
+
+  return { status, lastSyncedAt, flush }
 }

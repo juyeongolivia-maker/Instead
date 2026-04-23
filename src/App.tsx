@@ -257,7 +257,7 @@ export default function App() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   // Auth + cloud sync (status not surfaced in UI; syncing runs silently)
   const auth = useAuth()
-  useCloudSync(auth.user, {
+  const { flush: flushCloudSync } = useCloudSync(auth.user, {
     storageKey: STORAGE_KEY,
     onRemoteApplied: () => {
       // Remote state replaced localStorage; reload so every useState re-hydrates from it
@@ -732,6 +732,9 @@ export default function App() {
                   <button
                     onClick={async () => {
                       setAccountMenuOpen(false)
+                      // Flush any pending debounced write BEFORE signing out, otherwise
+                      // the effect cleanup cancels the timer and the last edit is lost.
+                      await flushCloudSync()
                       await auth.signOut()
                       // Clear local cache so the app returns to its fresh empty state.
                       // Data is still safe in Firestore and will be restored on next sign-in.
