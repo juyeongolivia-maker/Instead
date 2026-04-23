@@ -27,6 +27,14 @@ export function useCloudSync(user: User | null, opts: Options) {
   // Tracks the blob we have most recently "claimed" as ours (either just wrote, or just received).
   // onSnapshot compares against this to skip our own echoes.
   const lastKnownBlobRef = useRef<string | null>(null)
+  // Rolling window of recently-written blobs so rapid successive edits don't misidentify
+  // stale echo snapshots as genuine remote changes.
+  const recentWrittenRef = useRef<string[]>([])
+  const rememberWritten = (blob: string) => {
+    recentWrittenRef.current.push(blob)
+    if (recentWrittenRef.current.length > 10) recentWrittenRef.current.shift()
+  }
+  const wasRecentlyWritten = (blob: string) => recentWrittenRef.current.includes(blob)
   const statusRef = useRef<SyncStatus>("idle")
   // Dedupe: only actually update status if it changed
   const setStatus = (s: SyncStatus) => {
@@ -63,14 +71,26 @@ export function useCloudSync(user: User | null, opts: Options) {
         } else {
           const remoteBlob = snap.data()?.blob
           if (typeof remoteBlob === "string") {
-            lastKnownBlobRef.current = remoteBlob
-            if (localRaw && localRaw !== remoteBlob) {
-              // Conflict: remote wins (last-write-wins). User can always re-import from backup.
+            if (!localRaw) {
+              // No local data: hydrate from remote + reload so React state picks it up
+              lastKnownBlobRef.current = remoteBlob
               localStorage.setItem(storageKey, remoteBlob)
               onRemoteApplied?.()
-            } else if (!localRaw) {
-              localStorage.setItem(storageKey, remoteBlob)
-              onRemoteApplied?.()
+            } else if (localRaw === remoteBlob) {
+              // Perfectly in sync
+              lastKnownBlobRef.current = remoteBlob
+            } else {
+              // Conflict: LOCAL wins on initial login. Prevents re-serialization loops and
+              // respects the most recent thing the user did on this device. If semantic state
+              // is same but bytes differ (key order, new fields), local blob will be pushed
+              // up by the poll/debounce effect. Genuine remote updates from other devices
+              // still come through onSnapshot below.
+              lastKnownBlobRef.current = localRaw
+              // eslint-disable-next-line no-console
+              console.log("[sync] initial conflict — local wins", {
+                localLen: localRaw.length,
+                remoteLen: remoteBlob.length,
+              })
             }
           }
           setStatus("synced")
@@ -87,8 +107,8 @@ export function useCloudSync(user: User | null, opts: Options) {
         snap => {
           const remoteBlob = snap.data()?.blob
           if (typeof remoteBlob !== "string") return
-          // Skip our own echoes — we already know this blob
-          if (remoteBlob === lastKnownBlobRef.current) {
+          // Skip echoes: matches current known, OR was recently written by us
+          if (remoteBlob === lastKnownBlobRef.current || wasRecentlyWritten(remoteBlob)) {
             // eslint-disable-next-line no-console
             console.log("[sync] snapshot (echo, skipped)", { len: remoteBlob.length })
             return
@@ -100,6 +120,7 @@ export function useCloudSync(user: User | null, opts: Options) {
           })
           // Genuine remote update from another device/tab
           lastKnownBlobRef.current = remoteBlob
+          rememberWritten(remoteBlob)
           localStorage.setItem(storageKey, remoteBlob)
           onRemoteApplied?.()
           setStatus("synced")
