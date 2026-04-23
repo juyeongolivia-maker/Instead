@@ -283,6 +283,10 @@ export default function App() {
   const t = i18n[lang]
   const theme = themes[themeColor]
 
+  // Gate the save effect: don't overwrite localStorage until initial load has finished.
+  // Otherwise the mount-time save (with default empty state) clobbers whatever load/sync just set.
+  const [hydrated, setHydrated] = useState(false)
+
   // Load from localStorage (with migration from legacy keys)
   useEffect(() => {
     let raw = localStorage.getItem(STORAGE_KEY)
@@ -299,7 +303,10 @@ export default function App() {
         }
       }
     }
-    if (!raw) return
+    if (!raw) {
+      setHydrated(true)
+      return
+    }
     try {
       const p = JSON.parse(raw)
       if (p.lang) setLang(p.lang)
@@ -329,16 +336,18 @@ export default function App() {
       if (typeof p.krwRateAuto === "number" && p.krwRateAuto > 0) setKrwRateAuto(p.krwRateAuto)
       if (typeof p.krwRateAutoFetchedAt === "number") setKrwRateAutoFetchedAt(p.krwRateAutoFetchedAt)
     } catch { /* ignore */ }
+    setHydrated(true)
   }, [])
 
-  // Save to localStorage
+  // Save to localStorage (only after hydration — otherwise initial defaults would clobber loaded data)
   useEffect(() => {
+    if (!hydrated) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
       lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal,
       krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt,
     }))
-  }, [lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
+  }, [hydrated, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
 
   // Dark mode
   useEffect(() => {

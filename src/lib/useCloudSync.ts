@@ -21,12 +21,19 @@ type Options = {
 
 export function useCloudSync(user: User | null, opts: Options) {
   const { storageKey, onRemoteApplied } = opts
-  const [status, setStatus] = useState<SyncStatus>("idle")
+  const [status, setStatusRaw] = useState<SyncStatus>("idle")
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Tracks the blob we have most recently "claimed" as ours (either just wrote, or just received).
   // onSnapshot compares against this to skip our own echoes.
   const lastKnownBlobRef = useRef<string | null>(null)
+  const statusRef = useRef<SyncStatus>("idle")
+  // Dedupe: only actually update status if it changed
+  const setStatus = (s: SyncStatus) => {
+    if (statusRef.current === s) return
+    statusRef.current = s
+    setStatusRaw(s)
+  }
 
   // Subscribe to the user's doc.
   useEffect(() => {
