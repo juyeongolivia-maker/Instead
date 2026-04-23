@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 type Currency = "USD" | "KRW"
@@ -28,8 +28,34 @@ type RecordItem = {
   endMonth?: number // 0-11
 }
 
-const KRW_RATE = 1380
+type GoalIconKey = "plane" | "home" | "car" | "grad" | "heart" | "piggy" | "target"
+const goalIcons: Record<GoalIconKey, LucideIcon> = {
+  plane: Plane,
+  home: Home,
+  car: Car,
+  grad: GraduationCap,
+  heart: Heart,
+  piggy: PiggyBank,
+  target: Target,
+}
+
+type Goal = {
+  id: string
+  name: string
+  iconKey: GoalIconKey
+  targetUsd: number
+  deadline?: number // timestamp, optional
+  createdAt: number
+  achievedAt?: number
+}
+
+const KRW_RATE_FALLBACK = 1380
+const RATE_STALE_MS = 1000 * 60 * 60 * 24 // refetch after 24h
+const RATE_API_URL = "https://open.er-api.com/v6/latest/USD"
 const STORAGE_KEY = "instead-react-v2"
+// Prior storage keys we should migrate from on first load (oldest → kept for safety)
+const LEGACY_STORAGE_KEYS = ["instead-react-v1", "instead-react"]
+const SCHEMA_VERSION = 1
 
 // Theme definitions
 // primary / primaryFg: used for bg-primary / text-primary-foreground (buttons, active segments, FAB)
@@ -145,18 +171,48 @@ const i18n = {
   },
 } as const
 
-const presetItems: { key: "coffee" | "bag" | "clothes" | "delivery" | "subscription" | "impulse" | "dining"; Icon: LucideIcon; usd: number }[] = [
-  { key: "coffee", Icon: Coffee, usd: 7 },
-  { key: "bag", Icon: ShoppingBag, usd: 800 },
-  { key: "clothes", Icon: Shirt, usd: 150 },
-  { key: "delivery", Icon: Utensils, usd: 25 },
-  { key: "subscription", Icon: Tv, usd: 15 },
-  { key: "impulse", Icon: ShoppingCart, usd: 50 },
-  { key: "dining", Icon: UtensilsCrossed, usd: 60 },
+// defaultMode/defaultFreq drive auto-selection when a preset chip is tapped.
+// "once" → one-time purchase; "recurring" + freq sets daily(365)/weekly(52)/monthly(12).
+const presetItems: {
+  key: "coffee" | "bag" | "clothes" | "delivery" | "subscription" | "impulse" | "dining"
+  Icon: LucideIcon
+  usd: number
+  defaultMode: Mode
+  defaultFreq?: FrequencyValue
+}[] = [
+  { key: "coffee", Icon: Coffee, usd: 7, defaultMode: "once" },
+  { key: "bag", Icon: ShoppingBag, usd: 800, defaultMode: "once" },
+  { key: "clothes", Icon: Shirt, usd: 150, defaultMode: "once" },
+  { key: "delivery", Icon: Utensils, usd: 25, defaultMode: "once" },
+  { key: "subscription", Icon: Tv, usd: 15, defaultMode: "recurring", defaultFreq: "12" },
+  { key: "impulse", Icon: ShoppingCart, usd: 50, defaultMode: "once" },
+  { key: "dining", Icon: UtensilsCrossed, usd: 60, defaultMode: "once" },
 ]
 
 function fvLump(p: number, r: number, y: number) {
   return p * Math.pow(1 + r / 100, y)
+}
+
+// Calendar-based contribution of a recurring item for a specific month.
+// Prorates the START month for daily/weekly items (counts only from start date to month-end).
+// - once: not called (once items handled separately)
+// - monthly (freq=12): full usdAmt regardless of start day (monthly is atomic per month)
+// - weekly  (freq=52): usdAmt × (activeDays / 7)
+// - daily   (freq=365): usdAmt × activeDays
+// activeDays = (in start month) daysInMonth - startDay + 1, else full daysInMonth
+function contributionForMonth(usdAmt: number, freq: number, startTs: number, year: number, month: number) {
+  if (freq === 12) return usdAmt
+  const startDate = new Date(startTs)
+  const sy = startDate.getFullYear()
+  const sm = startDate.getMonth()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const isStartMonth = sy === year && sm === month
+  const activeDays = isStartMonth
+    ? Math.max(0, daysInMonth - startDate.getDate() + 1)
+    : daysInMonth
+  if (freq === 52) return usdAmt * (activeDays / 7)
+  if (freq === 365) return usdAmt * activeDays
+  return usdAmt * (freq / 12) // defensive fallback
 }
 function fvRecurring(perYear: number, r: number, y: number, freq: number) {
   const rp = r / 100 / freq
@@ -188,13 +244,39 @@ export default function App() {
   const [horizons, setHorizons] = useState<number[]>([10, 20])
   const [examplesDismissed, setExamplesDismissed] = useState(false)
   const [horizonMenuOpen, setHorizonMenuOpen] = useState(false)
+  const [goal, setGoal] = useState<Goal | null>(null)
+  const [goalEditorOpen, setGoalEditorOpen] = useState(false)
+  // Exchange rate (USD → KRW)
+  const [krwRateSource, setKrwRateSource] = useState<"auto" | "manual">("auto")
+  const [krwRateManual, setKrwRateManual] = useState<number>(KRW_RATE_FALLBACK)
+  const [krwRateAuto, setKrwRateAuto] = useState<number | null>(null)
+  const [krwRateAutoFetchedAt, setKrwRateAutoFetchedAt] = useState<number | null>(null)
+  const [krwRateFetching, setKrwRateFetching] = useState(false)
+  const [krwRateError, setKrwRateError] = useState<string | null>(null)
+  // Effective rate: when auto and we have a fetched value, use it; otherwise fall back to manual
+  const krwRate = krwRateSource === "manual"
+    ? krwRateManual
+    : (krwRateAuto ?? krwRateManual)
 
   const t = i18n[lang]
   const theme = themes[themeColor]
 
-  // Load from localStorage
+  // Load from localStorage (with migration from legacy keys)
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    let raw = localStorage.getItem(STORAGE_KEY)
+    // If current key is empty, try to migrate from any legacy key
+    if (!raw) {
+      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        const legacy = localStorage.getItem(legacyKey)
+        if (legacy) {
+          raw = legacy
+          // Copy forward; remove legacy to avoid duplicate
+          localStorage.setItem(STORAGE_KEY, legacy)
+          localStorage.removeItem(legacyKey)
+          break
+        }
+      }
+    }
     if (!raw) return
     try {
       const p = JSON.parse(raw)
@@ -213,15 +295,26 @@ export default function App() {
         setHorizons(p.horizons)
       }
       if (typeof p.examplesDismissed === "boolean") setExamplesDismissed(p.examplesDismissed)
+      if (p.goal && typeof p.goal === "object" && typeof p.goal.targetUsd === "number") {
+        // Validate iconKey, default to target if unknown
+        const icon = (p.goal.iconKey && goalIcons[p.goal.iconKey as GoalIconKey]) ? p.goal.iconKey : "target"
+        setGoal({ ...p.goal, iconKey: icon })
+      }
+      if (p.krwRateSource === "manual" || p.krwRateSource === "auto") setKrwRateSource(p.krwRateSource)
+      if (typeof p.krwRateManual === "number" && p.krwRateManual > 0) setKrwRateManual(p.krwRateManual)
+      if (typeof p.krwRateAuto === "number" && p.krwRateAuto > 0) setKrwRateAuto(p.krwRateAuto)
+      if (typeof p.krwRateAutoFetchedAt === "number") setKrwRateAutoFetchedAt(p.krwRateAutoFetchedAt)
     } catch { /* ignore */ }
   }, [])
 
   // Save to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed
+      schemaVersion: SCHEMA_VERSION,
+      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal,
+      krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt,
     }))
-  }, [lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed])
+  }, [lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
 
   // Dark mode
   useEffect(() => {
@@ -249,7 +342,7 @@ export default function App() {
 
   const calc = useMemo(() => {
     const rawAmt = parseFloat(amount) || 0
-    const usdAmt = currency === "KRW" ? rawAmt / KRW_RATE : rawAmt
+    const usdAmt = currency === "KRW" ? rawAmt / krwRate : rawAmt
     const r = parseFloat(rate) || 0
     const freq = parseFloat(frequency)
 
@@ -298,10 +391,15 @@ export default function App() {
       // Legacy recurring records without freq default to monthly (12)
       const isRecurring = item.type === "recurring"
       const freq = item.freq ?? (isRecurring ? 12 : 1)
+      // Calendar-based monthly amount with start-date proration for daily/weekly.
+      // e.g. $25/wk registered Apr 18 → April counts Apr 18–30 (13 days), May onward counts full month.
+      const monthAmt = isRecurring
+        ? contributionForMonth(item.usdAmt, freq, item.date, viewMonth.year, viewMonth.month)
+        : item.usdAmt
       const fvByHorizon: Record<number, number> = {}
       const fvRecurringByHorizon: Record<number, number> = {}
       horizons.forEach(h => {
-        const lumpValue = fvLump(item.usdAmt, r, h)
+        const lumpValue = fvLump(monthAmt, r, h)
         fvByHorizon[h] = lumpValue
         horizonSums[h] += lumpValue
         if (isRecurring) {
@@ -309,15 +407,63 @@ export default function App() {
           fvRecurringByHorizon[h] = fvRecurring(annual, r, h, freq)
         }
       })
-      monthSaved += item.usdAmt
-      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq }
+      monthSaved += monthAmt
+      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt }
     })
     return { enriched, monthSaved, horizonSums }
   }, [records, rate, viewMonth, horizons])
 
+  // Two totals for goal progress:
+  // - totalSaved: actually accumulated through the current calendar month (solid progress)
+  // - projectedByDeadline: totalSaved + committed contributions of active recurrings through deadline (ghost projection)
+  // Once items only count when their date ≤ horizon. Recurring items contribute monthAmt × active-months in [start, min(end, horizon+1)).
+  const savingsSummary = useMemo(() => {
+    const now = new Date()
+    const currentAbs = now.getFullYear() * 12 + now.getMonth()
+    // Last contributing month: a month counts if its first day precedes the deadline.
+    // e.g. deadline Sep 1 → last = Aug. Deadline Sep 30 → last = Sep. Deadline Sep 1 exactly → Aug.
+    let lastMonthAbs = currentAbs
+    if (goal?.deadline) {
+      const dl = new Date(goal.deadline)
+      const dlMonthAbs = dl.getFullYear() * 12 + dl.getMonth()
+      lastMonthAbs = dl.getDate() === 1 ? dlMonthAbs - 1 : dlMonthAbs
+    }
+    // If deadline has already passed, projection and actual converge
+    const horizonAbs = Math.max(currentAbs, lastMonthAbs)
+    const sumThrough = (throughAbsInclusive: number) => {
+      let total = 0
+      records.forEach(item => {
+        const d = new Date(item.date)
+        const startAbs = d.getFullYear() * 12 + d.getMonth()
+        const isRecurring = item.type === "recurring"
+        const freq = item.freq ?? (isRecurring ? 12 : 1)
+        if (!isRecurring) {
+          if (startAbs <= throughAbsInclusive) total += item.usdAmt
+          return
+        }
+        const endAbsExclusive = (item.endYear !== undefined && item.endMonth !== undefined)
+          ? item.endYear * 12 + item.endMonth
+          : throughAbsInclusive + 1
+        const cap = Math.min(endAbsExclusive, throughAbsInclusive + 1)
+        // Sum calendar-based contribution for each active month (prorates start month)
+        for (let abs = startAbs; abs < cap; abs++) {
+          const y = Math.floor(abs / 12)
+          const m = abs % 12
+          total += contributionForMonth(item.usdAmt, freq, item.date, y, m)
+        }
+      })
+      return total
+    }
+    const totalSaved = sumThrough(currentAbs)
+    const projectedByDeadline = goal?.deadline ? sumThrough(horizonAbs) : totalSaved
+    return { totalSaved, projectedByDeadline }
+  }, [records, goal])
+  const totalSaved = savingsSummary.totalSaved
+  const projectedByDeadline = savingsSummary.projectedByDeadline
+
   function fmt(usd: number) {
     if (currency === "KRW") {
-      const won = Math.round(usd * KRW_RATE)
+      const won = Math.round(usd * krwRate)
       if (won >= 100000000) return `₩${(won / 100000000).toFixed(1)}억`
       if (won >= 10000) return `₩${Math.round(won / 10000)}만`
       return `₩${won.toLocaleString("ko-KR")}`
@@ -329,15 +475,15 @@ export default function App() {
 
   function fmtExact(usd: number) {
     return currency === "KRW"
-      ? `₩${Math.round(usd * KRW_RATE).toLocaleString("ko-KR")}`
+      ? `₩${Math.round(usd * krwRate).toLocaleString("ko-KR")}`
       : `$${usd.toFixed(2)}`
   }
 
   function handleCurrencyChange(next: Currency) {
     if (next === currency) return
     const cur = parseFloat(amount) || 0
-    if (next === "KRW") setAmount(String(cur < 10000 ? Math.round(cur * KRW_RATE / 1000) * 1000 : cur))
-    else setAmount(cur > 1000 ? (cur / KRW_RATE).toFixed(2) : String(cur))
+    if (next === "KRW") setAmount(String(cur < 10000 ? Math.round(cur * krwRate / 1000) * 1000 : cur))
+    else setAmount(cur > 1000 ? (cur / krwRate).toFixed(2) : String(cur))
     setCurrency(next)
   }
 
@@ -384,6 +530,98 @@ export default function App() {
   function clearAll() {
     if (window.confirm(t.confirmDeleteAll)) setRecords([])
   }
+
+  function exportData() {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const blob = new Blob([raw], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    const date = new Date().toISOString().slice(0, 10)
+    a.download = `instead-backup-${date}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  function importData(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const text = String(reader.result)
+        const p = JSON.parse(text)
+        if (typeof p !== "object" || p === null) throw new Error("invalid")
+        // Overwrite storage and reload to re-hydrate every state
+        if (!window.confirm(lang === "ko"
+          ? "기존 데이터를 백업 파일로 교체할까요?"
+          : "Replace existing data with backup?")) return
+        localStorage.setItem(STORAGE_KEY, text)
+        window.location.reload()
+      } catch {
+        window.alert(lang === "ko" ? "파일을 읽을 수 없어요 (JSON 확인)" : "Couldn't read file (check JSON)")
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  function saveGoal(input: { name: string; iconKey: GoalIconKey; targetUsd: number; deadline?: number }) {
+    setGoal(prev => {
+      if (prev) {
+        return { ...prev, ...input, achievedAt: undefined }
+      }
+      return {
+        id: crypto.randomUUID(),
+        createdAt: Date.now(),
+        ...input,
+      }
+    })
+    setGoalEditorOpen(false)
+  }
+
+  function deleteGoal() {
+    setGoal(null)
+    setGoalEditorOpen(false)
+  }
+
+  // Fetch USD→KRW from a free API. Called on auto-refresh + manual refresh.
+  async function fetchKrwRate() {
+    setKrwRateFetching(true)
+    setKrwRateError(null)
+    try {
+      const resp = await fetch(RATE_API_URL)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      const rate = data?.rates?.KRW
+      if (typeof rate !== "number" || rate <= 0) throw new Error("Invalid rate")
+      setKrwRateAuto(rate)
+      setKrwRateAutoFetchedAt(Date.now())
+    } catch (e) {
+      setKrwRateError(e instanceof Error ? e.message : "fetch failed")
+    } finally {
+      setKrwRateFetching(false)
+    }
+  }
+
+  // On mount (and whenever source flips back to auto), fetch if stale or empty
+  useEffect(() => {
+    if (krwRateSource !== "auto") return
+    const stale = !krwRateAutoFetchedAt || (Date.now() - krwRateAutoFetchedAt > RATE_STALE_MS)
+    if (stale) fetchKrwRate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [krwRateSource])
+
+  // Auto-mark goal as achieved when reached; clear if it falls back below (e.g., after deletions)
+  useEffect(() => {
+    if (!goal) return
+    const reached = totalSaved >= goal.targetUsd
+    if (reached && !goal.achievedAt) {
+      setGoal({ ...goal, achievedAt: Date.now() })
+    } else if (!reached && goal.achievedAt) {
+      setGoal({ ...goal, achievedAt: undefined })
+    }
+  }, [totalSaved, goal])
 
   const heroLabel = lang === "ko"
     ? `${years}${t.years} 후 미래가치`
@@ -537,9 +775,98 @@ export default function App() {
 
           <Separator />
 
-          {/* Danger zone */}
+          {/* Exchange rate */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {lang === "ko" ? "환율 (USD → KRW)" : "Exchange rate (USD → KRW)"}
+            </Label>
+            <div className="flex gap-2">
+              {(["auto", "manual"] as const).map(src => (
+                <button
+                  key={src}
+                  onClick={() => setKrwRateSource(src)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${krwRateSource === src ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+                >
+                  {src === "auto"
+                    ? (lang === "ko" ? "자동" : "Auto")
+                    : (lang === "ko" ? "직접 입력" : "Manual")}
+                </button>
+              ))}
+            </div>
+            {krwRateSource === "auto" ? (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 text-xs text-muted-foreground">
+                  {krwRateFetching ? (
+                    lang === "ko" ? "가져오는 중..." : "Fetching..."
+                  ) : krwRateAuto && krwRateAutoFetchedAt ? (
+                    <>
+                      1 USD = <span className="font-semibold text-foreground">₩{krwRateAuto.toFixed(2)}</span>
+                      <div className="text-[10px]">
+                        {lang === "ko" ? "업데이트: " : "Updated: "}
+                        {new Date(krwRateAutoFetchedAt).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { dateStyle: "short", timeStyle: "short" })}
+                      </div>
+                    </>
+                  ) : krwRateError ? (
+                    <span className="text-destructive">
+                      {lang === "ko" ? `가져오기 실패 — 현재 ₩${krwRate} 사용` : `Fetch failed — using ₩${krwRate}`}
+                    </span>
+                  ) : (
+                    lang === "ko" ? "아직 가져오지 않음" : "Not fetched yet"
+                  )}
+                </div>
+                <Button variant="outline" size="sm" onClick={fetchKrwRate} disabled={krwRateFetching}>
+                  {lang === "ko" ? "새로고침" : "Refresh"}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={String(krwRateManual)}
+                  onChange={e => {
+                    const v = parseFloat(e.target.value)
+                    if (Number.isFinite(v) && v > 0) setKrwRateManual(v)
+                  }}
+                  className="h-9"
+                />
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {lang === "ko" ? "원/달러" : "KRW per USD"}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <Separator />
+
+          {/* Data section */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data</Label>
+            <p className="text-xs text-muted-foreground">
+              {lang === "ko"
+                ? "앱 업데이트 전 백업, 새 기기로 옮길 때 복원에 사용해요."
+                : "Back up before updates or restore on a new device."}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={exportData}>
+                {lang === "ko" ? "내보내기" : "Export"}
+              </Button>
+              <label className="flex-1">
+                <Button variant="outline" className="w-full pointer-events-none">
+                  {lang === "ko" ? "가져오기" : "Import"}
+                </Button>
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) importData(file)
+                    e.target.value = "" // allow re-selecting the same file later
+                  }}
+                />
+              </label>
+            </div>
             <Button variant="destructive" className="w-full" onClick={() => { clearAll(); setView("list") }}>
               {t.deleteAll}
             </Button>
@@ -554,10 +881,6 @@ export default function App() {
     const r = parseFloat(rate) || 10
     const exampleRows: { key: "coffee" | "delivery" | "subscription" | "bag" | "dining"; Icon: LucideIcon; usd: number; freq: number }[] = [
       { key: "coffee", Icon: Coffee, usd: 7, freq: 365 },
-      { key: "delivery", Icon: Utensils, usd: 25, freq: 52 },
-      { key: "subscription", Icon: Tv, usd: 15, freq: 12 },
-      { key: "bag", Icon: ShoppingBag, usd: 800, freq: 1 },
-      { key: "dining", Icon: UtensilsCrossed, usd: 60, freq: 52 },
     ]
     const exampleData = exampleRows.map(ex => {
       const isRecurring = ex.freq > 1
@@ -574,6 +897,119 @@ export default function App() {
       <div className="min-h-screen bg-background text-foreground">
         <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-3 px-4 pb-24 pt-4">
           <Header />
+
+          {/* Goal card */}
+          {goal ? (() => {
+            // Committed = actual + recurring commitments through deadline. This is the headline.
+            const committed = projectedByDeadline
+            const committedPct = Math.min(100, (committed / goal.targetUsd) * 100)
+            const isAchieved = !!goal.achievedAt
+            const GoalIcon = goalIcons[goal.iconKey] ?? Target
+            // Deadline-based stats
+            let daysLeft: number | null = null
+            let saveableMonths = 0
+            let shortfall = 0
+            let onTrack = false
+            if (goal.deadline) {
+              const msPerDay = 1000 * 60 * 60 * 24
+              daysLeft = Math.max(0, Math.ceil((goal.deadline - Date.now()) / msPerDay))
+              const now = new Date()
+              const currentAbs = now.getFullYear() * 12 + now.getMonth()
+              const dl = new Date(goal.deadline)
+              const dlMonthAbs = dl.getFullYear() * 12 + dl.getMonth()
+              const lastAbs = dl.getDate() === 1 ? dlMonthAbs - 1 : dlMonthAbs
+              saveableMonths = Math.max(1, lastAbs - currentAbs + 1)
+              shortfall = Math.max(0, goal.targetUsd - committed)
+              onTrack = committed >= goal.targetUsd
+            }
+            const extraMonthlyNeeded = goal.deadline ? shortfall / saveableMonths : 0
+            const futureCommitment = Math.max(0, committed - totalSaved)
+            return (
+              <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
+                <button className="w-full text-left" onClick={() => setGoalEditorOpen(true)}>
+                  <CardContent className="p-4 space-y-2">
+                    {isAchieved ? (
+                      <div className="flex items-center gap-2">
+                        <Trophy className={`h-5 w-5 ${theme.textAccent}`} strokeWidth={1.5} />
+                        <span className="font-bold text-sm">
+                          {lang === "ko" ? `${goal.name} 달성!` : `${goal.name} achieved!`}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <GoalIcon className={`h-5 w-5 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
+                          <span className="font-bold text-sm truncate">{goal.name}</span>
+                        </div>
+                        <span className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                          {fmt(committed)} / {fmt(goal.targetUsd)}
+                        </span>
+                      </div>
+                    )}
+                    {/* Progress bar: solid = committed (actual + recurring commitments to deadline) */}
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${committedPct}%` }}
+                      />
+                    </div>
+                    {/* Meta line */}
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        {committedPct.toFixed(1)}%
+                        {goal.deadline && futureCommitment > 0 && (
+                          <span className="ml-1 text-muted-foreground/70">
+                            {lang === "ko"
+                              ? `(실제 ${fmt(totalSaved)} + 예정 ${fmt(futureCommitment)})`
+                              : `(saved ${fmt(totalSaved)} + committed ${fmt(futureCommitment)})`}
+                          </span>
+                        )}
+                      </span>
+                      {!isAchieved && goal.deadline && daysLeft !== null ? (
+                        onTrack ? (
+                          <span className={theme.textAccent}>
+                            {lang === "ko" ? `${daysLeft}일 · 이대로면 달성 ✓` : `${daysLeft}d · on track ✓`}
+                          </span>
+                        ) : (
+                          <span>
+                            {lang === "ko"
+                              ? `${daysLeft}일 · 월 +${fmt(extraMonthlyNeeded)} 더 필요`
+                              : `${daysLeft}d · +${fmt(extraMonthlyNeeded)}/mo needed`}
+                          </span>
+                        )
+                      ) : isAchieved ? (
+                        <span className={theme.textAccent}>
+                          {lang === "ko" ? "축하해요 🎉" : "Congrats 🎉"}
+                        </span>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </button>
+              </Card>
+            )
+          })() : (
+            <Card className="border-dashed">
+              <button
+                className="w-full text-left"
+                onClick={() => setGoalEditorOpen(true)}
+              >
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-muted ${theme.textAccent}`}>
+                    <Target className="h-5 w-5" strokeWidth={1.5} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm">
+                      {lang === "ko" ? "목표를 만들어보세요" : "Set a goal"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {lang === "ko" ? "스킵할 때마다 진행률이 쌓여요" : "Every skip fills your progress bar"}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                </CardContent>
+              </button>
+            </Card>
+          )}
 
           {/* Month navigator */}
           {records.length > 0 && (() => {
@@ -684,9 +1120,12 @@ export default function App() {
                     >
                       <div className="font-semibold truncate">{item.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {fmtExact(item.usdAmt)}
-                        {item.isRecurring && (
+                        {fmtExact(item.monthAmt)}
+                        {item.isRecurring && item.freq !== 12 && (
                           <span> ({fmtExact(item.usdAmt)}{freqSuffix})</span>
+                        )}
+                        {item.isRecurring && item.freq === 12 && (
+                          <span>{freqSuffix}</span>
                         )}
                       </div>
                     </button>
@@ -746,6 +1185,116 @@ export default function App() {
             </Card>
           )}
 
+          {/* Goal editor modal */}
+          {goalEditorOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setGoalEditorOpen(false)}>
+              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-3" onClick={e => e.stopPropagation()}>
+                <p className="font-semibold">
+                  {goal
+                    ? (lang === "ko" ? "목표 편집" : "Edit goal")
+                    : (lang === "ko" ? "새 목표" : "New goal")}
+                </p>
+                {/* Icon picker */}
+                <div className="space-y-1">
+                  <Label className="text-xs">{lang === "ko" ? "아이콘" : "Icon"}</Label>
+                  <div className="flex gap-1.5">
+                    {(Object.keys(goalIcons) as GoalIconKey[]).map(key => {
+                      const Icon = goalIcons[key]
+                      const selected = (goal?.iconKey ?? "target") === key
+                      return (
+                        <button
+                          key={key}
+                          id={`goal-icon-${key}`}
+                          type="button"
+                          onClick={() => {
+                            // toggle visual selection via DOM (we read final value on save)
+                            document.querySelectorAll("[data-goal-icon-btn]").forEach(el => el.removeAttribute("data-selected"))
+                            const el = document.getElementById(`goal-icon-${key}`)
+                            if (el) el.setAttribute("data-selected", "true")
+                          }}
+                          data-goal-icon-btn
+                          data-icon-key={key}
+                          data-selected={selected ? "true" : undefined}
+                          className="flex h-9 w-9 items-center justify-center rounded-md border border-border data-[selected=true]:border-primary data-[selected=true]:bg-primary/10 hover:bg-muted"
+                        >
+                          <Icon className="h-4 w-4" strokeWidth={1.5} />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{lang === "ko" ? "이름" : "Name"}</Label>
+                  <Input
+                    autoFocus
+                    defaultValue={goal?.name ?? ""}
+                    placeholder={lang === "ko" ? "예: 한국 여행" : "e.g. Korea trip"}
+                    maxLength={40}
+                    id="goal-name-input"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    {lang === "ko"
+                      ? (currency === "KRW" ? "목표 금액 (₩)" : "목표 금액 ($)")
+                      : (currency === "KRW" ? "Target (₩)" : "Target ($)")}
+                  </Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    defaultValue={goal ? String(currency === "KRW" ? Math.round(goal.targetUsd * krwRate) : goal.targetUsd) : ""}
+                    placeholder={currency === "KRW" ? "6900000" : "5000"}
+                    id="goal-target-input"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    {lang === "ko" ? "목표 날짜 (선택)" : "Deadline (optional)"}
+                  </Label>
+                  <Input
+                    type="date"
+                    defaultValue={goal?.deadline ? new Date(goal.deadline).toISOString().slice(0, 10) : ""}
+                    id="goal-deadline-input"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  {goal && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (window.confirm(lang === "ko" ? "목표를 삭제할까요?" : "Delete this goal?")) {
+                          deleteGoal()
+                        }
+                      }}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      {lang === "ko" ? "삭제" : "Delete"}
+                    </Button>
+                  )}
+                  <Button variant="outline" className="flex-1" onClick={() => setGoalEditorOpen(false)}>
+                    {lang === "ko" ? "취소" : "Cancel"}
+                  </Button>
+                  <Button className="flex-1" onClick={() => {
+                    const nameInput = document.getElementById("goal-name-input") as HTMLInputElement
+                    const targetInput = document.getElementById("goal-target-input") as HTMLInputElement
+                    const deadlineInput = document.getElementById("goal-deadline-input") as HTMLInputElement
+                    const selectedIconEl = document.querySelector<HTMLElement>("[data-goal-icon-btn][data-selected=true]")
+                    const iconKey = (selectedIconEl?.dataset.iconKey as GoalIconKey | undefined) ?? goal?.iconKey ?? "target"
+                    const name = nameInput.value.trim() || (lang === "ko" ? "내 목표" : "My goal")
+                    const rawTarget = parseFloat(targetInput.value)
+                    if (!Number.isFinite(rawTarget) || rawTarget <= 0) return
+                    const targetUsd = currency === "KRW" ? rawTarget / krwRate : rawTarget
+                    const deadlineStr = deadlineInput.value
+                    const deadline = deadlineStr ? new Date(deadlineStr + "T00:00:00").getTime() : undefined
+                    saveGoal({ name, iconKey, targetUsd, deadline })
+                  }}>
+                    {lang === "ko" ? "저장" : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Edit modal */}
           {editingRecord && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setEditingRecord(null)}>
@@ -769,7 +1318,7 @@ export default function App() {
                     type="number"
                     inputMode="decimal"
                     defaultValue={currency === "KRW"
-                      ? String(Math.round(editingRecord.usdAmt * KRW_RATE))
+                      ? String(Math.round(editingRecord.usdAmt * krwRate))
                       : String(editingRecord.usdAmt)}
                     onKeyDown={e => {
                       if (e.key === "Escape") setEditingRecord(null)
@@ -786,7 +1335,7 @@ export default function App() {
                     const amtInput = document.getElementById("edit-amount-input") as HTMLInputElement
                     const raw = parseFloat(amtInput.value)
                     const usd = currency === "KRW"
-                      ? (Number.isFinite(raw) ? raw / KRW_RATE : undefined)
+                      ? (Number.isFinite(raw) ? raw / krwRate : undefined)
                       : (Number.isFinite(raw) ? raw : undefined)
                     updateRecord(editingRecord.id, nameInput.value, usd)
                   }}>
@@ -912,8 +1461,12 @@ export default function App() {
                     onClick={() => {
                       setItemName(t.presets[item.key])
                       setAmount(currency === "KRW"
-                        ? String(Math.round(item.usd * KRW_RATE / 1000) * 1000)
+                        ? String(Math.round(item.usd * krwRate / 1000) * 1000)
                         : String(item.usd))
+                      setMode(item.defaultMode)
+                      if (item.defaultMode === "recurring" && item.defaultFreq) {
+                        setFrequency(item.defaultFreq)
+                      }
                     }}
                   >
                     <item.Icon className="mr-1 h-3 w-3" strokeWidth={1.5} />{t.presets[item.key]}
