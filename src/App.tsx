@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, Cloud, CloudOff, RefreshCw } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, CloudOff, RefreshCw } from "lucide-react"
 import { useAuth } from "@/lib/useAuth"
 import { useCloudSync } from "@/lib/useCloudSync"
 import type { LucideIcon } from "lucide-react"
@@ -551,11 +551,14 @@ export default function App() {
     }))
   }
 
-  function updateRecord(id: string, name: string, usdAmt?: number) {
+  function updateRecord(id: string, name: string, usdAmt?: number, mode?: Mode, freq?: number) {
     setRecords(prev => prev.map(r => {
       if (r.id !== id) return r
       const nextAmt = usdAmt !== undefined && usdAmt > 0 ? usdAmt : r.usdAmt
-      return { ...r, name, usdAmt: nextAmt }
+      const nextType = mode ?? r.type
+      // freq: 1 for once, 365/52/12 for daily/weekly/monthly
+      const nextFreq = nextType === "once" ? 1 : (freq ?? r.freq ?? 12)
+      return { ...r, name, usdAmt: nextAmt, type: nextType, freq: nextFreq }
     }))
     setEditingRecord(null)
   }
@@ -677,25 +680,21 @@ export default function App() {
         </h1>
       </div>
       <div className="flex items-center gap-1.5">
-        {/* Sync status indicator (when logged in) */}
-        {auth.user && (
+        {/* Sync status: only shown when actively syncing or error. Silent when synced/idle. */}
+        {auth.user && (cloud.status === "syncing" || cloud.status === "error") && (
           <span
             className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[10px] text-muted-foreground"
             title={cloud.lastSyncedAt ? new Date(cloud.lastSyncedAt).toLocaleTimeString() : ""}
           >
             {cloud.status === "syncing" ? (
               <RefreshCw className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-            ) : cloud.status === "error" ? (
-              <CloudOff className="h-3 w-3 text-destructive" strokeWidth={1.5} />
             ) : (
-              <Cloud className="h-3 w-3" strokeWidth={1.5} />
+              <CloudOff className="h-3 w-3 text-destructive" strokeWidth={1.5} />
             )}
             <span className="hidden sm:inline">
               {cloud.status === "syncing"
                 ? (lang === "ko" ? "동기화 중" : "Syncing")
-                : cloud.status === "error"
-                  ? (lang === "ko" ? "오류" : "Error")
-                  : (lang === "ko" ? "동기화됨" : "Synced")}
+                : (lang === "ko" ? "오류" : "Error")}
             </span>
           </span>
         )}
@@ -1462,6 +1461,42 @@ export default function App() {
                     id="edit-amount-input"
                   />
                 </div>
+                {/* Frequency selector: once / daily / weekly / monthly */}
+                <div className="space-y-1">
+                  <Label className="text-xs">{lang === "ko" ? "빈도" : "Frequency"}</Label>
+                  <div className="flex rounded-lg border border-border overflow-hidden">
+                    {([
+                      { label: t.oneTime, mode: "once" as Mode, freq: 1 },
+                      { label: t.daily, mode: "recurring" as Mode, freq: 365 },
+                      { label: t.weekly, mode: "recurring" as Mode, freq: 52 },
+                      { label: t.monthly, mode: "recurring" as Mode, freq: 12 },
+                    ]).map((opt, i, arr) => {
+                      const currentType = editingRecord.type
+                      const currentFreq = editingRecord.freq ?? (currentType === "recurring" ? 12 : 1)
+                      const isActive = opt.mode === "once"
+                        ? currentType === "once"
+                        : currentType === "recurring" && currentFreq === opt.freq
+                      return (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          data-edit-freq-btn
+                          data-mode={opt.mode}
+                          data-freq={opt.freq}
+                          data-active={isActive ? "true" : undefined}
+                          onClick={() => {
+                            // Update visual selection via DOM; value read on save
+                            document.querySelectorAll("[data-edit-freq-btn]").forEach(el => el.removeAttribute("data-active"))
+                            ;(document.querySelector(`[data-edit-freq-btn][data-mode="${opt.mode}"][data-freq="${opt.freq}"]`) as HTMLElement | null)?.setAttribute("data-active", "true")
+                          }}
+                          className={`flex-1 py-2 text-xs font-semibold transition-colors ${i < arr.length - 1 ? "border-r border-border" : ""} data-[active=true]:bg-primary data-[active=true]:text-primary-foreground text-muted-foreground hover:text-foreground`}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <Button variant="outline" className="flex-1" onClick={() => setEditingRecord(null)}>
                     {lang === "ko" ? "취소" : "Cancel"}
@@ -1469,11 +1504,14 @@ export default function App() {
                   <Button className="flex-1" onClick={() => {
                     const nameInput = document.getElementById("edit-name-input") as HTMLInputElement
                     const amtInput = document.getElementById("edit-amount-input") as HTMLInputElement
+                    const activeFreq = document.querySelector<HTMLElement>("[data-edit-freq-btn][data-active=true]")
                     const raw = parseFloat(amtInput.value)
                     const usd = currency === "KRW"
                       ? (Number.isFinite(raw) ? raw / krwRate : undefined)
                       : (Number.isFinite(raw) ? raw : undefined)
-                    updateRecord(editingRecord.id, nameInput.value, usd)
+                    const pickedMode = (activeFreq?.dataset.mode as Mode | undefined) ?? editingRecord.type
+                    const pickedFreq = activeFreq?.dataset.freq ? parseInt(activeFreq.dataset.freq, 10) : undefined
+                    updateRecord(editingRecord.id, nameInput.value, usd, pickedMode, pickedFreq)
                   }}>
                     {lang === "ko" ? "저장" : "Save"}
                   </Button>
