@@ -88,7 +88,16 @@ export function useCloudSync(user: User | null, opts: Options) {
           const remoteBlob = snap.data()?.blob
           if (typeof remoteBlob !== "string") return
           // Skip our own echoes — we already know this blob
-          if (remoteBlob === lastKnownBlobRef.current) return
+          if (remoteBlob === lastKnownBlobRef.current) {
+            // eslint-disable-next-line no-console
+            console.log("[sync] snapshot (echo, skipped)", { len: remoteBlob.length })
+            return
+          }
+          // eslint-disable-next-line no-console
+          console.log("[sync] remote changed — applying + reload", {
+            prevLen: lastKnownBlobRef.current?.length ?? 0,
+            newLen: remoteBlob.length,
+          })
           // Genuine remote update from another device/tab
           lastKnownBlobRef.current = remoteBlob
           localStorage.setItem(storageKey, remoteBlob)
@@ -118,6 +127,11 @@ export function useCloudSync(user: User | null, opts: Options) {
       // If current matches what we already know (either we wrote it, or we received it), skip
       if (current === lastKnownBlobRef.current) return
       // Genuine local change: mark it + schedule debounced write
+      // eslint-disable-next-line no-console
+      console.log("[sync] local changed — scheduling write", {
+        prevLen: lastKnownBlobRef.current?.length ?? 0,
+        newLen: current.length,
+      })
       setStatus("syncing")
       if (writeTimer.current) clearTimeout(writeTimer.current)
       writeTimer.current = setTimeout(async () => {
