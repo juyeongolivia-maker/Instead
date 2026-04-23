@@ -747,6 +747,49 @@ export default function App() {
     </div>
   )
 
+  // ── AUTH GATE ──
+  // When Firebase is configured, require sign-in before showing the app.
+  // Signed-out state = clean login screen only (no local data leaks).
+  if (auth.configured) {
+    if (auth.loading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+          <div className="text-sm text-muted-foreground">
+            {lang === "ko" ? "로딩 중..." : "Loading..."}
+          </div>
+        </div>
+      )
+    }
+    if (!auth.user) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-6">
+          <div className="w-full max-w-sm space-y-6 text-center">
+            <div className="flex items-center justify-center gap-2">
+              <Wallet className={`h-8 w-8 ${theme.textAccent}`} strokeWidth={1.5} />
+              <h1 className="text-3xl font-black tracking-tight">{t.appName}</h1>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {lang === "ko"
+                ? "샀을 대신 아꼈을 때 얼마가 될까?"
+                : "What if you saved instead of spent?"}
+            </p>
+            <Button
+              className="w-full"
+              onClick={auth.signInWithGoogle}
+              disabled={auth.loading}
+            >
+              <LogIn className="h-4 w-4 mr-2" strokeWidth={1.5} />
+              {lang === "ko" ? "Google로 로그인" : "Sign in with Google"}
+            </Button>
+            {auth.error && (
+              <p className="text-xs text-destructive">{auth.error}</p>
+            )}
+          </div>
+        </div>
+      )
+    }
+  }
+
   // ── SETTINGS VIEW ──
   if (view === "settings") {
     const SegmentGroup = ({ value, onChange, options }: {
