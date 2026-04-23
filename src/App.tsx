@@ -719,7 +719,14 @@ export default function App() {
                     )}
                   </div>
                   <button
-                    onClick={() => { auth.signOut(); setAccountMenuOpen(false) }}
+                    onClick={async () => {
+                      setAccountMenuOpen(false)
+                      await auth.signOut()
+                      // Clear local cache so the app returns to its fresh empty state.
+                      // Data is still safe in Firestore and will be restored on next sign-in.
+                      localStorage.removeItem(STORAGE_KEY)
+                      window.location.reload()
+                    }}
                     className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-muted"
                   >
                     <LogOut className="h-3 w-3" strokeWidth={1.5} />
