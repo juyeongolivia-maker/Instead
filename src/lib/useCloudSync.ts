@@ -24,12 +24,11 @@ export function useCloudSync(user: User | null, opts: Options) {
   const [status, setStatus] = useState<SyncStatus>("idle")
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const remoteAppliedRef = useRef(false) // guard against echo-loop when our own write comes back
-  const lastWrittenRef = useRef<string | null>(null)
+  // Tracks the blob we have most recently "claimed" as ours (either just wrote, or just received).
+  // onSnapshot compares against this to skip our own echoes.
+  const lastKnownBlobRef = useRef<string | null>(null)
 
-  // Subscribe to the user's doc. First snapshot is treated as "initial load":
-  // - if remote exists → overwrite localStorage, call onRemoteApplied
-  // - if remote empty → push current localStorage up
+  // Subscribe to the user's doc.
   useEffect(() => {
     if (!user || !firebaseDb) {
       setStatus("idle")
@@ -37,94 +36,100 @@ export function useCloudSync(user: User | null, opts: Options) {
     }
     setStatus("loading")
     const ref = doc(firebaseDb, "users", user.uid, "app", "state")
-    let isFirst = true
+    let unsub: (() => void) | null = null
+    let cancelled = false
 
     // Prime with a one-shot fetch so we can do merge logic on first login
     ;(async () => {
       try {
         const snap = await getDoc(ref)
+        if (cancelled) return
         const localRaw = localStorage.getItem(storageKey)
         if (!snap.exists()) {
           // No remote yet: push local up
           if (localRaw) {
+            lastKnownBlobRef.current = localRaw // set BEFORE setDoc so echoes match
             await setDoc(ref, { blob: localRaw, updatedAt: serverTimestamp() })
-            lastWrittenRef.current = localRaw
           }
           setStatus("synced")
           setLastSyncedAt(Date.now())
         } else {
           const remoteBlob = snap.data()?.blob
           if (typeof remoteBlob === "string") {
+            lastKnownBlobRef.current = remoteBlob
             if (localRaw && localRaw !== remoteBlob) {
-              // Conflict: keep remote (last-write-wins on remote side). User can re-import later.
+              // Conflict: remote wins (last-write-wins). User can always re-import from backup.
               localStorage.setItem(storageKey, remoteBlob)
-              remoteAppliedRef.current = true
               onRemoteApplied?.()
             } else if (!localRaw) {
               localStorage.setItem(storageKey, remoteBlob)
-              remoteAppliedRef.current = true
               onRemoteApplied?.()
             }
-            lastWrittenRef.current = remoteBlob
           }
           setStatus("synced")
           setLastSyncedAt(Date.now())
         }
       } catch {
-        setStatus("error")
+        if (!cancelled) setStatus("error")
       }
 
-      // Then subscribe to live updates
-      const unsub = onSnapshot(
+      if (cancelled) return
+      // Subscribe to live updates (multi-device realtime)
+      unsub = onSnapshot(
         ref,
         snap => {
-          if (isFirst) { isFirst = false; return } // skip echoes of our own priming write
           const remoteBlob = snap.data()?.blob
-          if (typeof remoteBlob === "string" && remoteBlob !== lastWrittenRef.current) {
-            localStorage.setItem(storageKey, remoteBlob)
-            lastWrittenRef.current = remoteBlob
-            remoteAppliedRef.current = true
-            onRemoteApplied?.()
-            setStatus("synced")
-            setLastSyncedAt(Date.now())
-          }
+          if (typeof remoteBlob !== "string") return
+          // Skip our own echoes — we already know this blob
+          if (remoteBlob === lastKnownBlobRef.current) return
+          // Genuine remote update from another device/tab
+          lastKnownBlobRef.current = remoteBlob
+          localStorage.setItem(storageKey, remoteBlob)
+          onRemoteApplied?.()
+          setStatus("synced")
+          setLastSyncedAt(Date.now())
         },
         () => setStatus("error"),
       )
-
-      return unsub
     })()
-    // we intentionally don't return the inner unsub since the outer cleanup isn't used
-    // for one-time first fetch; revisit if multi-device realtime becomes critical
+
+    return () => {
+      cancelled = true
+      if (unsub) unsub()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   // Watch localStorage for changes and debounce-write to Firestore.
-  // We can't listen to localStorage events from same tab, so we poll the key on a short interval.
+  // Same-tab localStorage changes don't fire "storage" events, so we poll.
   useEffect(() => {
     if (!user || !firebaseDb) return
     const ref = doc(firebaseDb, "users", user.uid, "app", "state")
-    let lastSeen: string | null = localStorage.getItem(storageKey)
     const interval = setInterval(() => {
       const current = localStorage.getItem(storageKey)
-      if (current === lastSeen) return
-      lastSeen = current
-      if (remoteAppliedRef.current) {
-        // This change came from remote; don't write back
-        remoteAppliedRef.current = false
-        return
-      }
       if (!current) return
-      if (current === lastWrittenRef.current) return
+      // If current matches what we already know (either we wrote it, or we received it), skip
+      if (current === lastKnownBlobRef.current) return
+      // Genuine local change: mark it + schedule debounced write
       setStatus("syncing")
       if (writeTimer.current) clearTimeout(writeTimer.current)
       writeTimer.current = setTimeout(async () => {
+        // Re-read in case state changed again during debounce window
+        const latest = localStorage.getItem(storageKey)
+        if (!latest) return
+        if (latest === lastKnownBlobRef.current) {
+          setStatus("synced")
+          return
+        }
+        const before = lastKnownBlobRef.current
+        lastKnownBlobRef.current = latest // set BEFORE write so onSnapshot echo matches
         try {
-          await setDoc(ref, { blob: current, updatedAt: serverTimestamp() })
-          lastWrittenRef.current = current
+          await setDoc(ref, { blob: latest, updatedAt: serverTimestamp() })
           setStatus("synced")
           setLastSyncedAt(Date.now())
         } catch {
+          // Roll back so next poll will retry
+          lastKnownBlobRef.current = before
           setStatus("error")
         }
       }, WRITE_DEBOUNCE_MS)

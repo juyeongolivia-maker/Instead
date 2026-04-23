@@ -41,6 +41,8 @@ const goalIcons: Record<GoalIconKey, LucideIcon> = {
   target: Target,
 }
 
+type GoalType = "personal" | "shared"
+
 type Goal = {
   id: string
   name: string
@@ -49,6 +51,9 @@ type Goal = {
   deadline?: number // timestamp, optional
   createdAt: number
   achievedAt?: number
+  // Phase 1: added for future shared-goal support. All existing goals default to "personal".
+  // Phase 2 will introduce memberIds/inviteToken + Firestore shared collection.
+  type?: GoalType
 }
 
 const KRW_RATE_FALLBACK = 1380
@@ -315,7 +320,9 @@ export default function App() {
       if (p.goal && typeof p.goal === "object" && typeof p.goal.targetUsd === "number") {
         // Validate iconKey, default to target if unknown
         const icon = (p.goal.iconKey && goalIcons[p.goal.iconKey as GoalIconKey]) ? p.goal.iconKey : "target"
-        setGoal({ ...p.goal, iconKey: icon })
+        // Migrate legacy goals missing `type` → default to personal
+        const goalType: GoalType = p.goal.type === "shared" ? "shared" : "personal"
+        setGoal({ ...p.goal, iconKey: icon, type: goalType })
       }
       if (p.krwRateSource === "manual" || p.krwRateSource === "auto") setKrwRateSource(p.krwRateSource)
       if (typeof p.krwRateManual === "number" && p.krwRateManual > 0) setKrwRateManual(p.krwRateManual)
@@ -583,7 +590,7 @@ export default function App() {
     reader.readAsText(file)
   }
 
-  function saveGoal(input: { name: string; iconKey: GoalIconKey; targetUsd: number; deadline?: number }) {
+  function saveGoal(input: { name: string; iconKey: GoalIconKey; targetUsd: number; deadline?: number; type: GoalType }) {
     setGoal(prev => {
       if (prev) {
         return { ...prev, ...input, achievedAt: undefined }
@@ -1353,6 +1360,24 @@ export default function App() {
                     id="goal-deadline-input"
                   />
                 </div>
+                {/* Shared-goal checkbox (Phase 1: UI scaffold; Phase 2 will wire invite flow) */}
+                <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
+                  <input
+                    type="checkbox"
+                    id="goal-shared-input"
+                    defaultChecked={goal?.type === "shared"}
+                    disabled
+                    className="mt-0.5 h-4 w-4 accent-primary disabled:opacity-50 cursor-not-allowed"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-muted-foreground">
+                      {lang === "ko" ? "다른 사람과 공유하기" : "Share with someone"}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {lang === "ko" ? "곧 출시 — 파트너/가족과 함께 저축" : "Coming soon — save together with a partner"}
+                    </div>
+                  </div>
+                </label>
                 <div className="flex gap-2 pt-1">
                   {goal && (
                     <Button
@@ -1374,6 +1399,7 @@ export default function App() {
                     const nameInput = document.getElementById("goal-name-input") as HTMLInputElement
                     const targetInput = document.getElementById("goal-target-input") as HTMLInputElement
                     const deadlineInput = document.getElementById("goal-deadline-input") as HTMLInputElement
+                    const sharedInput = document.getElementById("goal-shared-input") as HTMLInputElement | null
                     const selectedIconEl = document.querySelector<HTMLElement>("[data-goal-icon-btn][data-selected=true]")
                     const iconKey = (selectedIconEl?.dataset.iconKey as GoalIconKey | undefined) ?? goal?.iconKey ?? "target"
                     const name = nameInput.value.trim() || (lang === "ko" ? "내 목표" : "My goal")
@@ -1386,7 +1412,8 @@ export default function App() {
                     const targetUsd = currency === "KRW" ? rawTarget / krwRate : rawTarget
                     const deadlineStr = deadlineInput.value
                     const deadline = deadlineStr ? new Date(deadlineStr + "T00:00:00").getTime() : undefined
-                    saveGoal({ name, iconKey, targetUsd, deadline })
+                    const type: GoalType = sharedInput?.checked ? "shared" : "personal"
+                    saveGoal({ name, iconKey, targetUsd, deadline, type })
                   }}>
                     {lang === "ko" ? "저장" : "Save"}
                   </Button>
