@@ -71,6 +71,9 @@ export function useCloudSync(user: User | null, opts: Options) {
         } else {
           const remoteBlob = snap.data()?.blob
           if (typeof remoteBlob === "string") {
+            // Always remember the remote blob we just fetched, so when onSnapshot fires
+            // with it, we don't treat it as a "remote change" and trigger a reload loop.
+            rememberWritten(remoteBlob)
             if (!localRaw) {
               // No local data: hydrate from remote + reload so React state picks it up
               lastKnownBlobRef.current = remoteBlob
@@ -80,12 +83,11 @@ export function useCloudSync(user: User | null, opts: Options) {
               // Perfectly in sync
               lastKnownBlobRef.current = remoteBlob
             } else {
-              // Conflict: LOCAL wins on initial login. Prevents re-serialization loops and
-              // respects the most recent thing the user did on this device. If semantic state
-              // is same but bytes differ (key order, new fields), local blob will be pushed
-              // up by the poll/debounce effect. Genuine remote updates from other devices
-              // still come through onSnapshot below.
+              // Conflict: LOCAL wins on initial login. Prevents re-serialization loops.
+              // Local blob will be pushed up by the poll/debounce. Genuine remote updates
+              // from other devices still come through onSnapshot.
               lastKnownBlobRef.current = localRaw
+              rememberWritten(localRaw)
               // eslint-disable-next-line no-console
               console.log("[sync] initial conflict — local wins", {
                 localLen: localRaw.length,
@@ -165,6 +167,7 @@ export function useCloudSync(user: User | null, opts: Options) {
         }
         const before = lastKnownBlobRef.current
         lastKnownBlobRef.current = latest // set BEFORE write so onSnapshot echo matches
+        rememberWritten(latest)
         try {
           await setDoc(ref, { blob: latest, updatedAt: serverTimestamp() })
           setStatus("synced")
