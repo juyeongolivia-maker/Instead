@@ -87,13 +87,14 @@ export function useCloudSync(user: User | null, opts: Options) {
                 return true
               }
             })()
-            if (localLooksEmpty) {
-              // Hydrate from remote + reload so React state picks it up
+            if (localLooksEmpty && localRaw !== remoteBlob) {
+              // Only reload if remote is genuinely different. If both sides look empty with
+              // identical bytes, we were already in sync — reloading would loop forever.
               lastKnownBlobRef.current = remoteBlob
               localStorage.setItem(storageKey, remoteBlob)
               onRemoteApplied?.()
-            } else if (localRaw && localRaw === remoteBlob) {
-              // Perfectly in sync
+            } else if (localRaw === remoteBlob) {
+              // Perfectly in sync (including the both-empty-identical case)
               lastKnownBlobRef.current = remoteBlob
             } else if (localRaw) {
               // Both sides have meaningful data but bytes differ — local wins to prevent
