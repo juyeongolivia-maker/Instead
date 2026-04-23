@@ -339,15 +339,26 @@ export default function App() {
     setHydrated(true)
   }, [])
 
-  // Save to localStorage (only after hydration — otherwise initial defaults would clobber loaded data)
+  // Save to localStorage (only after hydration AND only when signed in if auth is configured).
+  // Prevents (a) initial-mount defaults from clobbering loaded data, and (b) anonymous/signed-out
+  // state from being pushed up to Firestore after the user signs in.
   useEffect(() => {
     if (!hydrated) return
+    if (auth.configured && !auth.user) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
       lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal,
       krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt,
     }))
-  }, [hydrated, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
+  }, [hydrated, auth.configured, auth.user, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
+
+  // When Firebase is configured and user is signed out, ensure localStorage stays clean so that
+  // the next sign-in pulls fresh data from Firestore instead of pushing stale local state up.
+  useEffect(() => {
+    if (auth.configured && !auth.loading && !auth.user) {
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  }, [auth.configured, auth.loading, auth.user])
 
   // Dark mode
   useEffect(() => {
