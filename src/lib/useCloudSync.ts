@@ -92,10 +92,10 @@ export function useCloudSync(user: User | null, opts: Options) {
               lastKnownBlobRef.current = remoteBlob
               localStorage.setItem(storageKey, remoteBlob)
               onRemoteApplied?.()
-            } else if (localRaw === remoteBlob) {
+            } else if (localRaw && localRaw === remoteBlob) {
               // Perfectly in sync
               lastKnownBlobRef.current = remoteBlob
-            } else {
+            } else if (localRaw) {
               // Both sides have meaningful data but bytes differ — local wins to prevent
               // re-serialization loops. Debounced poll will push local up. Genuine remote
               // updates from other devices still come through onSnapshot.
