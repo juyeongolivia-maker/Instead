@@ -74,8 +74,21 @@ export function useCloudSync(user: User | null, opts: Options) {
             // Always remember the remote blob we just fetched, so when onSnapshot fires
             // with it, we don't treat it as a "remote change" and trigger a reload loop.
             rememberWritten(remoteBlob)
-            if (!localRaw) {
-              // No local data: hydrate from remote + reload so React state picks it up
+            // Detect "freshly signed in" — localStorage was cleared/defaults (no real user data).
+            // In that case we must pull remote, not push local up (which would wipe Firestore).
+            const localLooksEmpty = (() => {
+              if (!localRaw) return true
+              try {
+                const parsed = JSON.parse(localRaw)
+                const noRecords = !Array.isArray(parsed.records) || parsed.records.length === 0
+                const noGoal = !parsed.goal
+                return noRecords && noGoal
+              } catch {
+                return true
+              }
+            })()
+            if (localLooksEmpty) {
+              // Hydrate from remote + reload so React state picks it up
               lastKnownBlobRef.current = remoteBlob
               localStorage.setItem(storageKey, remoteBlob)
               onRemoteApplied?.()
@@ -83,9 +96,9 @@ export function useCloudSync(user: User | null, opts: Options) {
               // Perfectly in sync
               lastKnownBlobRef.current = remoteBlob
             } else {
-              // Conflict: LOCAL wins on initial login. Prevents re-serialization loops.
-              // Local blob will be pushed up by the poll/debounce. Genuine remote updates
-              // from other devices still come through onSnapshot.
+              // Both sides have meaningful data but bytes differ — local wins to prevent
+              // re-serialization loops. Debounced poll will push local up. Genuine remote
+              // updates from other devices still come through onSnapshot.
               lastKnownBlobRef.current = localRaw
               rememberWritten(localRaw)
               // eslint-disable-next-line no-console
