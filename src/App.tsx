@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, Cloud, CloudOff, RefreshCw } from "lucide-react"
+import { useAuth } from "@/lib/useAuth"
+import { useCloudSync } from "@/lib/useCloudSync"
 import type { LucideIcon } from "lucide-react"
 
 type Currency = "USD" | "KRW"
@@ -246,6 +248,21 @@ export default function App() {
   const [horizonMenuOpen, setHorizonMenuOpen] = useState(false)
   const [goal, setGoal] = useState<Goal | null>(null)
   const [goalEditorOpen, setGoalEditorOpen] = useState(false)
+  const [goalTargetInvalid, setGoalTargetInvalid] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  // Auth + cloud sync
+  const auth = useAuth()
+  const cloud = useCloudSync(auth.user, {
+    storageKey: STORAGE_KEY,
+    onRemoteApplied: () => {
+      // Remote state replaced localStorage; reload so every useState re-hydrates from it
+      window.location.reload()
+    },
+  })
+  // Reset validation state whenever the goal editor closes
+  useEffect(() => {
+    if (!goalEditorOpen && goalTargetInvalid) setGoalTargetInvalid(false)
+  }, [goalEditorOpen, goalTargetInvalid])
   // Exchange rate (USD → KRW)
   const [krwRateSource, setKrwRateSource] = useState<"auto" | "manual">("auto")
   const [krwRateManual, setKrwRateManual] = useState<number>(KRW_RATE_FALLBACK)
@@ -643,12 +660,85 @@ export default function App() {
           {t.appName}
         </h1>
       </div>
-      <button
-        onClick={() => setView("settings")}
-        className="rounded-md border border-border p-1.5 text-muted-foreground"
-      >
-        <Settings className="h-3.5 w-3.5" />
-      </button>
+      <div className="flex items-center gap-1.5">
+        {/* Sync status indicator (when logged in) */}
+        {auth.user && (
+          <span
+            className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[10px] text-muted-foreground"
+            title={cloud.lastSyncedAt ? new Date(cloud.lastSyncedAt).toLocaleTimeString() : ""}
+          >
+            {cloud.status === "syncing" ? (
+              <RefreshCw className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+            ) : cloud.status === "error" ? (
+              <CloudOff className="h-3 w-3 text-destructive" strokeWidth={1.5} />
+            ) : (
+              <Cloud className="h-3 w-3" strokeWidth={1.5} />
+            )}
+            <span className="hidden sm:inline">
+              {cloud.status === "syncing"
+                ? (lang === "ko" ? "동기화 중" : "Syncing")
+                : cloud.status === "error"
+                  ? (lang === "ko" ? "오류" : "Error")
+                  : (lang === "ko" ? "동기화됨" : "Synced")}
+            </span>
+          </span>
+        )}
+        {/* Account button */}
+        {auth.configured && (
+          <div className="relative">
+            {auth.user ? (
+              <button
+                onClick={() => setAccountMenuOpen(o => !o)}
+                className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-border"
+                aria-label={lang === "ko" ? "계정" : "Account"}
+              >
+                {auth.user.photoURL ? (
+                  <img src={auth.user.photoURL} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-xs font-bold">
+                    {(auth.user.displayName || auth.user.email || "?").charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={auth.signInWithGoogle}
+                disabled={auth.loading}
+                className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                <LogIn className="h-3 w-3" strokeWidth={1.5} />
+                {lang === "ko" ? "로그인" : "Sign in"}
+              </button>
+            )}
+            {accountMenuOpen && auth.user && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setAccountMenuOpen(false)} />
+                <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-md border border-border bg-background py-1 shadow-lg">
+                  <div className="border-b border-border px-3 py-2">
+                    <div className="text-xs font-semibold truncate">{auth.user.displayName ?? auth.user.email}</div>
+                    {auth.user.displayName && auth.user.email && (
+                      <div className="text-[10px] text-muted-foreground truncate">{auth.user.email}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { auth.signOut(); setAccountMenuOpen(false) }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-muted"
+                  >
+                    <LogOut className="h-3 w-3" strokeWidth={1.5} />
+                    {lang === "ko" ? "로그아웃" : "Sign out"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        <button
+          onClick={() => setView("settings")}
+          className="rounded-md border border-border p-1.5 text-muted-foreground"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   )
 
@@ -1234,7 +1324,7 @@ export default function App() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">
+                  <Label className={`text-xs ${goalTargetInvalid ? "text-destructive" : ""}`}>
                     {lang === "ko"
                       ? (currency === "KRW" ? "목표 금액 (₩)" : "목표 금액 ($)")
                       : (currency === "KRW" ? "Target (₩)" : "Target ($)")}
@@ -1243,9 +1333,15 @@ export default function App() {
                     type="number"
                     inputMode="decimal"
                     defaultValue={goal ? String(currency === "KRW" ? Math.round(goal.targetUsd * krwRate) : goal.targetUsd) : ""}
-                    placeholder={currency === "KRW" ? "6900000" : "5000"}
                     id="goal-target-input"
+                    className={goalTargetInvalid ? "border-destructive focus-visible:ring-destructive" : ""}
+                    onInput={() => { if (goalTargetInvalid) setGoalTargetInvalid(false) }}
                   />
+                  {goalTargetInvalid && (
+                    <p className="text-xs text-destructive">
+                      {lang === "ko" ? "목표 금액을 입력해주세요" : "Enter a target amount"}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">
@@ -1282,7 +1378,11 @@ export default function App() {
                     const iconKey = (selectedIconEl?.dataset.iconKey as GoalIconKey | undefined) ?? goal?.iconKey ?? "target"
                     const name = nameInput.value.trim() || (lang === "ko" ? "내 목표" : "My goal")
                     const rawTarget = parseFloat(targetInput.value)
-                    if (!Number.isFinite(rawTarget) || rawTarget <= 0) return
+                    if (!Number.isFinite(rawTarget) || rawTarget <= 0) {
+                      setGoalTargetInvalid(true)
+                      targetInput.focus()
+                      return
+                    }
                     const targetUsd = currency === "KRW" ? rawTarget / krwRate : rawTarget
                     const deadlineStr = deadlineInput.value
                     const deadline = deadlineStr ? new Date(deadlineStr + "T00:00:00").getTime() : undefined
