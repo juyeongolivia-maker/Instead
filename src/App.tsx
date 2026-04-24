@@ -1154,32 +1154,62 @@ export default function App() {
 
           {/* Saved records for selected month — list or calendar view */}
           {monthViewMode === "calendar" && records.length > 0 && (() => {
-            // Build a day→[once-records] map for the viewed month. Recurring items
-            // are listed separately below the grid since they'd otherwise fill
-            // every day and drown out the actual activity signal.
+            // For each day in the viewed month, figure out which records (both once
+            // and recurring) are active that day, so the grid actually reflects the
+            // daily rhythm of savings — not just one-off entries.
             const daysInMonth = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate()
             const firstWeekday = new Date(viewMonth.year, viewMonth.month, 1).getDay()
-            const onceByDay = new Map<number, RecordItem[]>()
+            const viewAbs = viewMonth.year * 12 + viewMonth.month
+            const recordsByDay = new Map<number, RecordItem[]>()
             const recurringThisMonth: RecordItem[] = []
-            records.forEach(r => {
-              const d = new Date(r.date)
-              if (r.type === "recurring") {
-                // Include if it has started on/before the viewed month AND not ended before it.
-                const startAbs = d.getFullYear() * 12 + d.getMonth()
-                const viewAbs = viewMonth.year * 12 + viewMonth.month
-                const endedBefore = typeof r.endYear === "number" && typeof r.endMonth === "number"
-                  && (r.endYear * 12 + r.endMonth) <= viewAbs
-                if (startAbs <= viewAbs && !endedBefore) recurringThisMonth.push(r)
-                return
+            const msPerDay = 86400000
+            for (let day = 1; day <= daysInMonth; day++) {
+              const dayDate = new Date(viewMonth.year, viewMonth.month, day)
+              const dayTs = dayDate.getTime()
+              const active: RecordItem[] = []
+              for (const r of records) {
+                const start = new Date(r.date)
+                const startDayTs = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()
+                if (startDayTs > dayTs) continue
+                if (typeof r.endYear === "number" && typeof r.endMonth === "number") {
+                  const endAbs = r.endYear * 12 + r.endMonth
+                  if (viewAbs >= endAbs) continue
+                }
+                if (r.type === "once") {
+                  if (start.getFullYear() === viewMonth.year
+                    && start.getMonth() === viewMonth.month
+                    && start.getDate() === day) active.push(r)
+                  continue
+                }
+                if (r.freq === 365) {
+                  active.push(r)
+                } else if (r.freq === 52) {
+                  const diffDays = Math.round((dayTs - startDayTs) / msPerDay)
+                  if (diffDays >= 0 && diffDays % 7 === 0) active.push(r)
+                } else if (r.freq === 12) {
+                  const targetDay = Math.min(start.getDate(), daysInMonth)
+                  if (day === targetDay) active.push(r)
+                }
               }
-              if (d.getFullYear() !== viewMonth.year || d.getMonth() !== viewMonth.month) return
-              const day = d.getDate()
-              onceByDay.set(day, [...(onceByDay.get(day) ?? []), r])
+              if (active.length > 0) recordsByDay.set(day, active)
+            }
+            // Build the "Recurring this month" footer too, for a quick-scan list +
+            // one-tap edit of recurring items without hunting through the grid.
+            records.forEach(r => {
+              if (r.type !== "recurring") return
+              const d = new Date(r.date)
+              const startAbs = d.getFullYear() * 12 + d.getMonth()
+              const endedBefore = typeof r.endYear === "number" && typeof r.endMonth === "number"
+                && (r.endYear * 12 + r.endMonth) <= viewAbs
+              if (startAbs <= viewAbs && !endedBefore) recurringThisMonth.push(r)
             })
             const weekdayLabels = lang === "ko"
               ? ["일", "월", "화", "수", "목", "금", "토"]
               : ["S", "M", "T", "W", "T", "F", "S"]
-            const selectedRecords = selectedDay !== null ? (onceByDay.get(selectedDay) ?? []) : []
+            // For recurring weekly/monthly items active on the selected day, scale
+            // the displayed amount to the per-occurrence amount (not monthly avg).
+            const dayAmount = (r: RecordItem) => r.usdAmt
+            const selectedRecords = selectedDay !== null ? (recordsByDay.get(selectedDay) ?? []) : []
             return (
               <Card>
                 <CardContent className="p-3 space-y-3">
@@ -1196,8 +1226,8 @@ export default function App() {
                     ))}
                     {Array.from({ length: daysInMonth }).map((_, i) => {
                       const day = i + 1
-                      const dayRecords = onceByDay.get(day) ?? []
-                      const total = dayRecords.reduce((s, r) => s + r.usdAmt, 0)
+                      const dayRecords = recordsByDay.get(day) ?? []
+                      const total = dayRecords.reduce((s, r) => s + dayAmount(r), 0)
                       const hasRecords = dayRecords.length > 0
                       const isSelected = selectedDay === day
                       return (
@@ -1227,16 +1257,23 @@ export default function App() {
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                         {lang === "ko" ? `${viewMonth.month + 1}월 ${selectedDay}일` : new Date(viewMonth.year, viewMonth.month, selectedDay).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                       </p>
-                      {selectedRecords.map(r => (
-                        <button
-                          key={r.id}
-                          onClick={() => setEditingRecord(r)}
-                          className="flex w-full items-center justify-between py-1 text-left"
-                        >
-                          <span className="text-sm font-semibold truncate flex-1 min-w-0">{r.name}</span>
-                          <span className="text-xs text-muted-foreground ml-2">{fmtExact(r.usdAmt)}</span>
-                        </button>
-                      ))}
+                      {selectedRecords.map(r => {
+                        const suffix = r.type === "recurring"
+                          ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/day")
+                            : r.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
+                            : (lang === "ko" ? "/월" : "/mo"))
+                          : ""
+                        return (
+                          <button
+                            key={r.id}
+                            onClick={() => setEditingRecord(r)}
+                            className="flex w-full items-center justify-between py-1 text-left"
+                          >
+                            <span className="text-sm font-semibold truncate flex-1 min-w-0">{r.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">{fmtExact(r.usdAmt)}{suffix}</span>
+                          </button>
+                        )
+                      })}
                     </div>
                   )}
                   {/* Recurring summary */}
