@@ -1401,6 +1401,9 @@ export default function App() {
                     : item.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
                     : (lang === "ko" ? "/월" : "/mo")
                     : ""
+                  const moSuffix = lang === "ko" ? "/월" : "/mo"
+                  // Show monthly equivalent only when the entered unit isn't already monthly
+                  const showMonthlyEq = item.isRecurring && item.freq !== 12
                   return (
                     <div key={item.id} className={`flex items-start px-4 py-2.5 ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
                       <button
@@ -1408,25 +1411,24 @@ export default function App() {
                         onClick={() => setEditingRecord(item)}
                         aria-label={lang === "ko" ? "편집" : "Edit"}
                       >
-                        <div className="text-sm font-semibold truncate leading-5">{item.name}</div>
-                        <div className="text-xs text-muted-foreground leading-4">
-                          {fmtExact(item.monthAmt)}
-                          {item.isRecurring && item.freq !== 12 && (
-                            <span> ({fmtExact(item.usdAmt)}{freqSuffix})</span>
-                          )}
-                          {item.isRecurring && item.freq === 12 && (
-                            <span>{freqSuffix}</span>
-                          )}
+                        {/* Line 1: name on the left, the entered unit amount + frequency on the right */}
+                        <div className="flex items-baseline justify-between gap-2 leading-5">
+                          <span className="text-sm font-semibold truncate">{item.name}</span>
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">
+                            {fmtExact(item.usdAmt)}{freqSuffix}
+                          </span>
                         </div>
+                        {/* Line 2 (recurring only, and only if the input unit isn't already monthly):
+                            monthly equivalent, right-aligned under the unit amount */}
+                        {showMonthlyEq && (
+                          <div className="flex justify-end text-xs text-muted-foreground leading-4">
+                            {fmtExact(item.monthAmt)}{moSuffix}
+                          </div>
+                        )}
                       </button>
                       {horizons.map(h => (
                         <div key={h} className={`w-14 text-right ${theme.textAccent}`}>
                           <div className="text-sm font-medium leading-5">{fmt(item.fvByHorizon[h])}</div>
-                          {item.isRecurring && (
-                            <div className="text-xs font-normal text-muted-foreground leading-4">
-                              ({fmt(item.fvRecurringByHorizon[h])})
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
