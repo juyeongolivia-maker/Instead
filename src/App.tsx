@@ -1467,7 +1467,7 @@ export default function App() {
                           : item.fvByHorizon[h]
                         return (
                           <div key={h} className={`w-14 text-right ${theme.textAccent}`}>
-                            <div className="text-sm font-medium leading-5">{fmt(headlineFv)}</div>
+                            <div className="text-xs font-medium leading-5">{fmt(headlineFv)}</div>
                           </div>
                         )
                       })}
