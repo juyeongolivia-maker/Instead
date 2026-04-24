@@ -1296,9 +1296,9 @@ export default function App() {
                 <CardContent className="p-3 space-y-3">
                   {/* Legend — explains the four frequency colors used in the grid dots. */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[10px] text-muted-foreground">
-                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{lang === "ko" ? "매일" : "Daily"}</span>
-                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-sky-400" />{lang === "ko" ? "매주" : "Weekly"}</span>
                     <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-violet-400" />{lang === "ko" ? "매달" : "Monthly"}</span>
+                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-sky-400" />{lang === "ko" ? "매주" : "Weekly"}</span>
+                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{lang === "ko" ? "매일" : "Daily"}</span>
                     <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />{lang === "ko" ? "일회" : "Once"}</span>
                   </div>
                   {/* Weekday header */}
