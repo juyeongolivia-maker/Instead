@@ -2307,8 +2307,8 @@ export default function App() {
             const W = 320
             const H = 90
             const padT = 14
-            const padR = 36 // room for the rightmost "30y" label
-            const padL = 4
+            const padR = 16
+            const padL = 16
             const padB = 14
             const chartW = W - padL - padR
             const chartH = H - padT - padB
@@ -2347,14 +2347,19 @@ export default function App() {
                     {anchors.map(y => {
                       const cx = xAt(y)
                       const cy = yAt(values[y])
+                      // Keep value label inside the viewBox: anchor to the end at the
+                      // right-most point so it extends leftward instead of getting clipped.
                       const isEnd = y === maxY
+                      const labelAnchor: "start" | "middle" | "end" = isEnd ? "end" : "middle"
+                      const labelX = isEnd ? cx : cx
+                      const labelY = Math.max(9, cy - 5)
                       return (
                         <g key={y}>
                           <circle cx={cx} cy={cy} r={2.5} fill={`hsl(${theme.primaryHsl})`} />
                           <text
-                            x={isEnd ? cx + 5 : cx}
-                            y={isEnd ? cy + 3 : cy - 5}
-                            textAnchor={isEnd ? "start" : "middle"}
+                            x={labelX}
+                            y={labelY}
+                            textAnchor={labelAnchor}
                             className="fill-foreground"
                             fontSize="10"
                             fontWeight="600"
