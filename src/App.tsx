@@ -1341,7 +1341,7 @@ export default function App() {
           {/* Goal editor modal */}
           {goalEditorOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setGoalEditorOpen(false)}>
-              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-3" onClick={e => e.stopPropagation()}>
+              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
                 <p className="font-semibold">
                   {goal
                     ? (lang === "ko" ? "목표 편집" : "Edit goal")
@@ -1434,7 +1434,7 @@ export default function App() {
                     </div>
                   </div>
                 </label>
-                <div className="flex gap-2 pt-1">
+                <div className="flex gap-2 pt-3">
                   {goal && (
                     <Button
                       variant="outline"
@@ -1481,7 +1481,7 @@ export default function App() {
           {/* Edit modal */}
           {editingRecord && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setEditingRecord(null)}>
-              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-3" onClick={e => e.stopPropagation()}>
+              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
                 <p className="font-semibold">{lang === "ko" ? "편집" : "Edit"}</p>
                 <div className="space-y-1">
                   <Label className="text-xs">{lang === "ko" ? "이름" : "Name"}</Label>
@@ -1545,7 +1545,7 @@ export default function App() {
                     })}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 pt-3">
                   <Button
                     variant="outline"
                     onClick={() => {
