@@ -1464,16 +1464,18 @@ export default function App() {
                         </div>
                       </button>
                       {/* Now column: monthly (or entered if already monthly/once) on line 1,
-                          entered unit in parens on line 2 for daily/weekly recurring */}
+                          entered unit in parens on line 2 for daily/weekly recurring.
+                          Use compact fmt() so KRW ₩260,000 collapses to ₩26만 and the
+                          number still fits the 80px column without wrapping. */}
                       <div className="w-20 text-right">
                         <div className="text-xs text-muted-foreground leading-5 whitespace-nowrap">
                           {showMonthlyEq
-                            ? `${fmtExact(item.monthAmt)}${moSuffix}`
-                            : `${fmtExact(item.usdAmt)}${freqSuffix}`}
+                            ? `${fmt(item.monthAmt)}${moSuffix}`
+                            : `${fmt(item.usdAmt)}${freqSuffix}`}
                         </div>
                         {showMonthlyEq && (
                           <div className="text-xs text-muted-foreground leading-4 whitespace-nowrap">
-                            ({fmtExact(item.usdAmt)}{freqSuffix})
+                            ({fmt(item.usdAmt)}{freqSuffix})
                           </div>
                         )}
                       </div>
