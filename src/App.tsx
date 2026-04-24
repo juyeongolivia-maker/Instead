@@ -1434,7 +1434,7 @@ export default function App() {
               </div>
               {/* Scroll the row list inside the card once it exceeds ~6 rows, so the totals
                   stay visible without pushing the goal card off-screen. */}
-              <div className="max-h-80 overflow-y-auto">
+              <div className="max-h-80 overflow-y-auto [scrollbar-gutter:stable]">
                 {historySummary.enriched.map((item, index) => {
                   const freqSuffix = item.isRecurring
                     ? item.freq === 365 ? (lang === "ko" ? "/일" : "/d")
@@ -1447,7 +1447,7 @@ export default function App() {
                   return (
                     <div key={item.id} className={`flex items-start px-4 py-2.5 gap-3 ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
                       <button
-                        className="flex-1 min-w-0 text-left"
+                        className="flex-1 min-w-0 text-left p-0 bg-transparent border-0 m-0"
                         onClick={() => setEditingRecord(item)}
                         aria-label={lang === "ko" ? "편집" : "Edit"}
                       >
