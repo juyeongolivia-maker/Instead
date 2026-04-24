@@ -603,7 +603,9 @@ export default function App() {
   function fmt(usd: number) {
     if (currency === "KRW") {
       const won = Math.round(usd * krwRate)
-      if (won >= 100000000) return `₩${(won / 100000000).toFixed(1)}억`
+      // Switch to 억 at 1000만 (=0.1억) so values never grow past 3 digits in front
+      // of the 만/억 suffix — keeps them inside the narrow 30Y / Now columns.
+      if (won >= 10000000) return `₩${(won / 100000000).toFixed(1)}억`
       if (won >= 10000) return `₩${Math.round(won / 10000)}만`
       return `₩${won.toLocaleString("ko-KR")}`
     }
