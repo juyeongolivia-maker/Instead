@@ -1050,7 +1050,186 @@ export default function App() {
         <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-3 px-4 pb-24 pt-4">
           <Header />
 
-          {/* Goal card */}
+          {/* Month navigator */}
+          {records.length > 0 && (() => {
+            const now = new Date()
+            const isCurrent = viewMonth.year === now.getFullYear() && viewMonth.month === now.getMonth()
+            const monthLabel = lang === "ko"
+              ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
+              : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+            return (
+              <div className="flex items-center justify-between px-1">
+                <button
+                  onClick={() => {
+                    const prev = new Date(viewMonth.year, viewMonth.month - 1, 1)
+                    setViewMonth({ year: prev.getFullYear(), month: prev.getMonth() })
+                  }}
+                  className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"
+                  aria-label={lang === "ko" ? "이전 달" : "Previous month"}
+                >
+                  <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
+                </button>
+                <span className="text-sm font-semibold">{monthLabel}</span>
+                <button
+                  onClick={() => {
+                    const next = new Date(viewMonth.year, viewMonth.month + 1, 1)
+                    setViewMonth({ year: next.getFullYear(), month: next.getMonth() })
+                  }}
+                  disabled={isCurrent}
+                  className="rounded-md p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label={lang === "ko" ? "다음 달" : "Next month"}
+                >
+                  <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Horizon selector (dropdown) */}
+          {records.length > 0 && (
+            <div className="relative flex items-center justify-end px-1">
+              <button
+                onClick={() => setHorizonMenuOpen(o => !o)}
+                className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                aria-haspopup="true"
+                aria-expanded={horizonMenuOpen}
+              >
+                {horizons.map(h => (lang === "ko" ? `${h}년` : `${h}Y`)).join(", ")}
+                <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
+              </button>
+              {horizonMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setHorizonMenuOpen(false)}
+                  />
+                  <div className="absolute right-1 top-full z-20 mt-1 flex min-w-[140px] flex-col rounded-md border border-border bg-background py-1 shadow-lg">
+                    {[10, 20, 30].map(h => {
+                      const active = horizons.includes(h)
+                      const isLast = horizons.length === 1 && active
+                      return (
+                        <button
+                          key={h}
+                          disabled={isLast}
+                          onClick={() => {
+                            if (active) {
+                              if (horizons.length > 1) setHorizons(horizons.filter(x => x !== h))
+                            } else {
+                              setHorizons([...horizons, h].sort((a, b) => a - b))
+                            }
+                          }}
+                          className="flex items-center justify-between px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60 disabled:hover:bg-transparent"
+                        >
+                          <span>{lang === "ko" ? `${h}년 후` : `In ${h}Y`}</span>
+                          {active && <Check className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Saved records for selected month */}
+          {historySummary.enriched.length > 0 ? (
+            <Card className="overflow-hidden">
+              {/* Header row */}
+              <div className="flex items-center border-b border-border px-4 py-2">
+                <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
+                {horizons.map(h => (
+                  <span key={h} className="w-14 text-right text-xs font-semibold text-muted-foreground">
+                    {lang === "ko" ? `${h}년 후` : `In ${h}Y`}
+                  </span>
+                ))}
+                <span className="w-8" />
+              </div>
+              {/* Scroll the row list inside the card once it exceeds ~6 rows, so the totals
+                  stay visible without pushing the goal card off-screen. */}
+              <div className="max-h-80 overflow-y-auto">
+                {historySummary.enriched.map((item, index) => {
+                  const freqSuffix = item.isRecurring
+                    ? item.freq === 365 ? (lang === "ko" ? "/일" : "/day")
+                    : item.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
+                    : (lang === "ko" ? "/월" : "/mo")
+                    : ""
+                  return (
+                    <div key={item.id} className={`flex items-start px-4 py-2.5 ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
+                      <button
+                        className="flex-1 min-w-0 text-left"
+                        onClick={() => setEditingRecord(item)}
+                        aria-label={lang === "ko" ? "편집" : "Edit"}
+                      >
+                        <div className="font-semibold truncate">{item.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {fmtExact(item.monthAmt)}
+                          {item.isRecurring && item.freq !== 12 && (
+                            <span> ({fmtExact(item.usdAmt)}{freqSuffix})</span>
+                          )}
+                          {item.isRecurring && item.freq === 12 && (
+                            <span>{freqSuffix}</span>
+                          )}
+                        </div>
+                      </button>
+                      {horizons.map(h => (
+                        <div key={h} className={`w-14 text-right text-xs font-medium ${theme.textAccent}`}>
+                          <div>{fmt(item.fvByHorizon[h])}</div>
+                          {item.isRecurring && (
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              ({fmt(item.fvRecurringByHorizon[h])})
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => deleteRecord(item.id)}
+                        className="w-8 flex justify-end pt-0.5 text-muted-foreground hover:text-destructive transition-colors"
+                        aria-label={lang === "ko" ? "삭제" : "Delete"}
+                      >
+                        <X className="h-4 w-4" strokeWidth={1.5} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Totals — labels on one row, amounts on the next, all column-aligned */}
+              <div className="border-t-2 border-border bg-muted/40 px-4 py-2.5">
+                {/* Label row */}
+                <div className="flex items-center">
+                  <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {lang === "ko" ? "이 달 합계" : "Month total"}
+                  </span>
+                  <span
+                    className="text-right text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    style={{ width: `${horizons.length * 3.5}rem` }}
+                  >
+                    {lang === "ko" ? "미래 합계" : "Future total"}
+                  </span>
+                  <span className="w-8" />
+                </div>
+                {/* Amount row */}
+                <div className="mt-1 flex items-center">
+                  <span className="flex-1 text-base font-extrabold">{fmt(historySummary.monthSaved)}</span>
+                  {horizons.map(h => (
+                    <div key={h} className={`w-14 text-right text-sm font-bold ${theme.textAccent}`}>
+                      {fmt(historySummary.horizonSums[h])}
+                    </div>
+                  ))}
+                  <span className="w-8" />
+                </div>
+              </div>
+            </Card>
+          ) : records.length > 0 && (
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                {lang === "ko" ? "이 달 기록 없음" : "No savings this month"}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Goal card (below the list so records read first; goal reads as the "why").
+              The horizon columns mirror the list's horizon checkboxes above — same state. */}
           {goal ? (() => {
             // Committed = actual + recurring commitments through deadline. This is the headline.
             const committed = projectedByDeadline
@@ -1168,180 +1347,6 @@ export default function App() {
                   <ChevronRight className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                 </CardContent>
               </button>
-            </Card>
-          )}
-
-          {/* Month navigator */}
-          {records.length > 0 && (() => {
-            const now = new Date()
-            const isCurrent = viewMonth.year === now.getFullYear() && viewMonth.month === now.getMonth()
-            const monthLabel = lang === "ko"
-              ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
-              : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
-            return (
-              <div className="flex items-center justify-between px-1">
-                <button
-                  onClick={() => {
-                    const prev = new Date(viewMonth.year, viewMonth.month - 1, 1)
-                    setViewMonth({ year: prev.getFullYear(), month: prev.getMonth() })
-                  }}
-                  className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"
-                  aria-label={lang === "ko" ? "이전 달" : "Previous month"}
-                >
-                  <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
-                </button>
-                <span className="text-sm font-semibold">{monthLabel}</span>
-                <button
-                  onClick={() => {
-                    const next = new Date(viewMonth.year, viewMonth.month + 1, 1)
-                    setViewMonth({ year: next.getFullYear(), month: next.getMonth() })
-                  }}
-                  disabled={isCurrent}
-                  className="rounded-md p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
-                  aria-label={lang === "ko" ? "다음 달" : "Next month"}
-                >
-                  <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-                </button>
-              </div>
-            )
-          })()}
-
-          {/* Horizon selector (dropdown) */}
-          {records.length > 0 && (
-            <div className="relative flex items-center justify-end px-1">
-              <button
-                onClick={() => setHorizonMenuOpen(o => !o)}
-                className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
-                aria-haspopup="true"
-                aria-expanded={horizonMenuOpen}
-              >
-                {horizons.map(h => (lang === "ko" ? `${h}년` : `${h}Y`)).join(", ")}
-                <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
-              </button>
-              {horizonMenuOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setHorizonMenuOpen(false)}
-                  />
-                  <div className="absolute right-1 top-full z-20 mt-1 flex min-w-[140px] flex-col rounded-md border border-border bg-background py-1 shadow-lg">
-                    {[10, 20, 30].map(h => {
-                      const active = horizons.includes(h)
-                      const isLast = horizons.length === 1 && active
-                      return (
-                        <button
-                          key={h}
-                          disabled={isLast}
-                          onClick={() => {
-                            if (active) {
-                              if (horizons.length > 1) setHorizons(horizons.filter(x => x !== h))
-                            } else {
-                              setHorizons([...horizons, h].sort((a, b) => a - b))
-                            }
-                          }}
-                          className="flex items-center justify-between px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60 disabled:hover:bg-transparent"
-                        >
-                          <span>{lang === "ko" ? `${h}년 후` : `In ${h}Y`}</span>
-                          {active && <Check className="h-3.5 w-3.5" strokeWidth={1.5} />}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Saved records for selected month */}
-          {historySummary.enriched.length > 0 ? (
-            <Card className="overflow-hidden">
-              {/* Header row */}
-              <div className="flex items-center border-b border-border px-4 py-2">
-                <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
-                {horizons.map(h => (
-                  <span key={h} className="w-14 text-right text-xs font-semibold text-muted-foreground">
-                    {lang === "ko" ? `${h}년 후` : `In ${h}Y`}
-                  </span>
-                ))}
-                <span className="w-8" />
-              </div>
-              {historySummary.enriched.map((item, index) => {
-                const freqSuffix = item.isRecurring
-                  ? item.freq === 365 ? (lang === "ko" ? "/일" : "/day")
-                  : item.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
-                  : (lang === "ko" ? "/월" : "/mo")
-                  : ""
-                return (
-                  <div key={item.id} className={`flex items-start px-4 py-2.5 ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
-                    <button
-                      className="flex-1 min-w-0 text-left"
-                      onClick={() => setEditingRecord(item)}
-                      aria-label={lang === "ko" ? "편집" : "Edit"}
-                    >
-                      <div className="font-semibold truncate">{item.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {fmtExact(item.monthAmt)}
-                        {item.isRecurring && item.freq !== 12 && (
-                          <span> ({fmtExact(item.usdAmt)}{freqSuffix})</span>
-                        )}
-                        {item.isRecurring && item.freq === 12 && (
-                          <span>{freqSuffix}</span>
-                        )}
-                      </div>
-                    </button>
-                    {horizons.map(h => (
-                      <div key={h} className={`w-14 text-right text-xs font-medium ${theme.textAccent}`}>
-                        <div>{fmt(item.fvByHorizon[h])}</div>
-                        {item.isRecurring && (
-                          <div className="text-[10px] font-normal text-muted-foreground">
-                            ({fmt(item.fvRecurringByHorizon[h])})
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => deleteRecord(item.id)}
-                      className="w-8 flex justify-end pt-0.5 text-muted-foreground hover:text-destructive transition-colors"
-                      aria-label={lang === "ko" ? "삭제" : "Delete"}
-                    >
-                      <X className="h-4 w-4" strokeWidth={1.5} />
-                    </button>
-                  </div>
-                )
-              })}
-
-              {/* Totals — labels on one row, amounts on the next, all column-aligned */}
-              <div className="border-t-2 border-border bg-muted/40 px-4 py-2.5">
-                {/* Label row */}
-                <div className="flex items-center">
-                  <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {lang === "ko" ? "이 달 합계" : "Month total"}
-                  </span>
-                  <span
-                    className="text-right text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
-                    style={{ width: `${horizons.length * 3.5}rem` }}
-                  >
-                    {lang === "ko" ? "미래 합계" : "Future total"}
-                  </span>
-                  <span className="w-8" />
-                </div>
-                {/* Amount row */}
-                <div className="mt-1 flex items-center">
-                  <span className="flex-1 text-base font-extrabold">{fmt(historySummary.monthSaved)}</span>
-                  {horizons.map(h => (
-                    <div key={h} className={`w-14 text-right text-sm font-bold ${theme.textAccent}`}>
-                      {fmt(historySummary.horizonSums[h])}
-                    </div>
-                  ))}
-                  <span className="w-8" />
-                </div>
-              </div>
-            </Card>
-          ) : records.length > 0 && (
-            <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                {lang === "ko" ? "이 달 기록 없음" : "No savings this month"}
-              </CardContent>
             </Card>
           )}
 
