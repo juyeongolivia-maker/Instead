@@ -1403,8 +1403,10 @@ export default function App() {
               {/* Header row */}
               {/* Scroll the rows inside the card (header + rows in same scroll container
                   so a visible scrollbar eats width from both, keeping columns aligned).
-                  Header sticks to the top as the user scrolls. */}
-              <div className="max-h-80 overflow-y-auto [scrollbar-gutter:stable]">
+                  Header sticks to the top as the user scrolls.
+                  overscroll-contain + touch-pan-y stop iOS Safari from forwarding the
+                  touch to the page's own scroll, which was hiding rows below the fold. */}
+              <div className="max-h-80 overflow-y-auto overscroll-contain touch-pan-y [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
                 {/* Three-column grid: name | now (entered + monthly eq) | in-horizon FV.
                     Same gap + widths used in every row below so columns line up cleanly. */}
                 <div className="sticky top-0 z-10 flex items-center border-b border-border bg-background px-4 py-2 gap-3">
