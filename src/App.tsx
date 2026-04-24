@@ -515,15 +515,21 @@ export default function App() {
       if (won >= 10000) return `₩${Math.round(won / 10000)}만`
       return `₩${won.toLocaleString("ko-KR")}`
     }
-    if (usd >= 1000000) return `$${(usd / 1000000).toFixed(2)}M`
+    // Keep a single decimal for 1k-10k (enough to differentiate $1.2k from $1.8k),
+    // drop it above 10k where the extra digit is just noise.
+    if (usd >= 1000000) return `$${(usd / 1000000).toFixed(1)}M`
+    if (usd >= 10000) return `$${Math.round(usd / 1000)}K`
     if (usd >= 1000) return `$${(usd / 1000).toFixed(1)}K`
     return `$${Math.round(usd).toLocaleString("en-US")}`
   }
 
   function fmtExact(usd: number) {
-    return currency === "KRW"
-      ? `₩${Math.round(usd * krwRate).toLocaleString("ko-KR")}`
-      : `$${usd.toFixed(2)}`
+    if (currency === "KRW") {
+      return `₩${Math.round(usd * krwRate).toLocaleString("ko-KR")}`
+    }
+    // Round to 1 decimal and drop trailing .0 so $56 stays "$56" not "$56.0".
+    const rounded = Math.round(usd * 10) / 10
+    return `$${rounded}`
   }
 
   function handleCurrencyChange(next: Currency) {
@@ -1192,10 +1198,10 @@ export default function App() {
                     {lang === "ko" ? "이 달 합계" : "Month total"}
                   </span>
                   <span
-                    className="text-right text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    className="text-right text-[10px] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap"
                     style={{ width: `${horizons.length * 3.5}rem` }}
                   >
-                    {lang === "ko" ? "미래 합계" : "Future total"}
+                    {lang === "ko" ? "미래" : "Future"}
                   </span>
                   <span className="w-8" />
                 </div>
