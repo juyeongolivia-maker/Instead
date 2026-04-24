@@ -481,17 +481,22 @@ export default function App() {
         : item.usdAmt
       const fvByHorizon: Record<number, number> = {}
       const fvRecurringByHorizon: Record<number, number> = {}
+      // fvUnitByHorizon: 30y (or selected horizon) FV of the entered unit amount alone
+      // ($7 grown at r% for h years). Paired with the stream FV below, this mirrors
+      // the two-line left side ($7/day + $210/mo) on the right.
+      const fvUnitByHorizon: Record<number, number> = {}
       horizons.forEach(h => {
         const lumpValue = fvLump(monthAmt, r, h)
         fvByHorizon[h] = lumpValue
         horizonSums[h] += lumpValue
+        fvUnitByHorizon[h] = fvLump(item.usdAmt, r, h)
         if (isRecurring) {
           const annual = item.usdAmt * freq
           fvRecurringByHorizon[h] = fvRecurring(annual, r, h, freq)
         }
       })
       monthSaved += monthAmt
-      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt }
+      return { ...item, fvByHorizon, fvRecurringByHorizon, fvUnitByHorizon, isRecurring, freq, monthAmt }
     })
     return { enriched, monthSaved, horizonSums }
   }, [records, rate, viewMonth, horizons])
@@ -1426,11 +1431,25 @@ export default function App() {
                           </div>
                         )}
                       </button>
-                      {horizons.map(h => (
-                        <div key={h} className={`w-14 text-right ${theme.textAccent}`}>
-                          <div className="text-sm font-medium leading-5">{fmt(item.fvByHorizon[h])}</div>
-                        </div>
-                      ))}
+                      {horizons.map(h => {
+                        // Mirror the left side's two-line structure on the right:
+                        //   line 1 = FV of the entered unit amount (\$7 alone over h years)
+                        //   line 2 = FV of the monthly-equivalent stream over h years
+                        // Monthly recurring collapses to a single line (the entered unit IS the stream).
+                        const primaryFv = item.isRecurring && item.freq === 12
+                          ? item.fvRecurringByHorizon[h]
+                          : item.fvUnitByHorizon[h]
+                        return (
+                          <div key={h} className={`w-14 text-right ${theme.textAccent}`}>
+                            <div className="text-sm font-medium leading-5">{fmt(primaryFv)}</div>
+                            {showMonthlyEq && (
+                              <div className="text-xs font-normal text-muted-foreground leading-4">
+                                ({fmt(item.fvRecurringByHorizon[h])})
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )
                 })}
