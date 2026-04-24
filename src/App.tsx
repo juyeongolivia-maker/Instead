@@ -470,7 +470,19 @@ export default function App() {
     let monthSaved = 0
     const horizonSums: Record<number, number> = {}
     horizons.forEach(h => { horizonSums[h] = 0 })
-    const enriched = [...scoped].sort((a, b) => b.date - a.date).map(item => {
+    // Sort: by frequency rank (daily→weekly→monthly→once) primary, date desc secondary.
+    // Groups daily/weekly (two-line rows) at the top and monthly/once (single-line rows)
+    // at the bottom, which also smooths out the ragged row-height rhythm in the list.
+    const freqRank = (item: RecordItem) => {
+      if (item.type !== "recurring") return 3
+      if (item.freq === 365) return 0
+      if (item.freq === 52) return 1
+      return 2
+    }
+    const enriched = [...scoped].sort((a, b) => {
+      const fd = freqRank(a) - freqRank(b)
+      return fd !== 0 ? fd : b.date - a.date
+    }).map(item => {
       // Legacy recurring records without freq default to monthly (12)
       const isRecurring = item.type === "recurring"
       const freq = item.freq ?? (isRecurring ? 12 : 1)
@@ -1416,9 +1428,20 @@ export default function App() {
                         onClick={() => setEditingRecord(item)}
                         aria-label={lang === "ko" ? "편집" : "Edit"}
                       >
-                        {/* Line 1: name on the left, the entered unit amount + frequency on the right */}
+                        {/* Line 1: name on the left, the entered unit amount + frequency on the right.
+                            Small colored dot mirrors the calendar legend so a glance at either view
+                            conveys the same "this is daily/weekly/monthly/once" signal. */}
                         <div className="flex items-baseline justify-between gap-2 leading-5">
-                          <span className="text-sm font-semibold truncate">{item.name}</span>
+                          <span className="flex items-baseline gap-1.5 min-w-0">
+                            <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                              item.isRecurring
+                                ? item.freq === 365 ? "bg-emerald-400"
+                                : item.freq === 52 ? "bg-sky-400"
+                                : "bg-violet-400"
+                                : "bg-amber-400"
+                            }`} />
+                            <span className="text-sm font-semibold truncate">{item.name}</span>
+                          </span>
                           <span className="text-sm text-muted-foreground whitespace-nowrap">
                             {fmtExact(item.usdAmt)}{freqSuffix}
                           </span>
