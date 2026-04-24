@@ -1213,6 +1213,13 @@ export default function App() {
             return (
               <Card>
                 <CardContent className="p-3 space-y-3">
+                  {/* Legend — explains the four frequency colors used in the grid dots. */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{lang === "ko" ? "매일" : "Daily"}</span>
+                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-sky-400" />{lang === "ko" ? "매주" : "Weekly"}</span>
+                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-violet-400" />{lang === "ko" ? "매달" : "Monthly"}</span>
+                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />{lang === "ko" ? "일회" : "Once"}</span>
+                  </div>
                   {/* Weekday header */}
                   <div className="grid grid-cols-7 gap-1">
                     {weekdayLabels.map((d, i) => (
@@ -1227,26 +1234,32 @@ export default function App() {
                     {Array.from({ length: daysInMonth }).map((_, i) => {
                       const day = i + 1
                       const dayRecords = recordsByDay.get(day) ?? []
-                      const total = dayRecords.reduce((s, r) => s + dayAmount(r), 0)
                       const hasRecords = dayRecords.length > 0
                       const isSelected = selectedDay === day
+                      // Distinct colored dot per frequency type present that day. Chosen
+                      // to read as a coordinated palette rather than utility-ticket hues.
+                      const hasOnce = dayRecords.some(r => r.type !== "recurring")
+                      const hasDaily = dayRecords.some(r => r.type === "recurring" && r.freq === 365)
+                      const hasWeekly = dayRecords.some(r => r.type === "recurring" && r.freq === 52)
+                      const hasMonthly = dayRecords.some(r => r.type === "recurring" && r.freq === 12)
                       return (
                         <button
                           key={day}
                           onClick={() => setSelectedDay(isSelected ? null : (hasRecords ? day : null))}
                           disabled={!hasRecords}
-                          className={`aspect-square rounded-md flex flex-col items-center justify-center gap-0.5 p-1 transition-colors ${
-                            isSelected ? `bg-primary text-primary-foreground` :
-                            hasRecords ? `bg-muted hover:bg-muted/80 ${theme.textAccent}` :
-                            "text-muted-foreground/60"
+                          className={`aspect-square rounded-md flex flex-col items-center justify-between py-1.5 px-1 transition-colors ${
+                            isSelected ? "bg-primary text-primary-foreground" :
+                            hasRecords ? "hover:bg-muted" :
+                            ""
                           }`}
                         >
-                          <span className="text-xs font-semibold leading-none">{day}</span>
-                          {hasRecords && (
-                            <span className="text-[9px] font-medium leading-none truncate max-w-full px-0.5">
-                              {fmt(total)}
-                            </span>
-                          )}
+                          <span className={`text-xs font-semibold leading-none ${hasRecords || isSelected ? "" : "text-muted-foreground/50"}`}>{day}</span>
+                          <div className="flex gap-0.5 min-h-[6px] items-center">
+                            {hasDaily && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                            {hasWeekly && <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />}
+                            {hasMonthly && <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />}
+                            {hasOnce && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />}
+                          </div>
                         </button>
                       )
                     })}
