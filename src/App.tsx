@@ -1432,7 +1432,7 @@ export default function App() {
                             Small colored dot mirrors the calendar legend so a glance at either view
                             conveys the same "this is daily/weekly/monthly/once" signal. */}
                         <div className="flex items-baseline justify-between gap-2 leading-5">
-                          <span className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="flex flex-1 items-baseline gap-1.5 min-w-0">
                             <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
                               item.isRecurring
                                 ? item.freq === 365 ? "bg-emerald-400"
@@ -1442,12 +1442,13 @@ export default function App() {
                             }`} />
                             <span className="text-sm font-semibold truncate">{item.name}</span>
                           </span>
-                          <span className="text-sm text-muted-foreground whitespace-nowrap">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
                             {fmtExact(item.usdAmt)}{freqSuffix}
                           </span>
                         </div>
                         {/* Line 2 (recurring only, and only if the input unit isn't already monthly):
-                            monthly equivalent, right-aligned under the unit amount */}
+                            monthly equivalent, right-aligned under the unit amount. Same text-xs
+                            as line 1 so /day and /mo share weight rather than a size hierarchy. */}
                         {showMonthlyEq && (
                           <div className="flex justify-end text-xs text-muted-foreground leading-4">
                             {fmtExact(item.monthAmt)}{moSuffix}
