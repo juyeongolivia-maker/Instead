@@ -1052,10 +1052,9 @@ export default function App() {
         <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-3 px-4 pb-24 pt-4">
           <Header />
 
-          {/* Month navigator */}
+          {/* Month navigator — allow forward nav so recurring items entered now
+              project visibly into next/future months. */}
           {records.length > 0 && (() => {
-            const now = new Date()
-            const isCurrent = viewMonth.year === now.getFullYear() && viewMonth.month === now.getMonth()
             const monthLabel = lang === "ko"
               ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
               : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
@@ -1077,8 +1076,7 @@ export default function App() {
                     const next = new Date(viewMonth.year, viewMonth.month + 1, 1)
                     setViewMonth({ year: next.getFullYear(), month: next.getMonth() })
                   }}
-                  disabled={isCurrent}
-                  className="rounded-md p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"
                   aria-label={lang === "ko" ? "다음 달" : "Next month"}
                 >
                   <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
