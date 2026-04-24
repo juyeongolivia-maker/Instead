@@ -1373,7 +1373,7 @@ export default function App() {
                               <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
                               <span className="text-sm font-semibold truncate">{r.name}</span>
                             </span>
-                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmtExact(r.usdAmt)}{suffix}</span>
+                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
                           </button>
                         )
                       })}
@@ -1402,7 +1402,7 @@ export default function App() {
                               <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
                               <span className="text-sm font-semibold truncate">{r.name}</span>
                             </span>
-                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmtExact(r.usdAmt)}{suffix}</span>
+                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
                           </button>
                         )
                       })}
