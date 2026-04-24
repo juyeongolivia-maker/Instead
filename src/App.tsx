@@ -493,22 +493,18 @@ export default function App() {
         : item.usdAmt
       const fvByHorizon: Record<number, number> = {}
       const fvRecurringByHorizon: Record<number, number> = {}
-      // fvUnitByHorizon: 30y (or selected horizon) FV of the entered unit amount alone
-      // ($7 grown at r% for h years). Paired with the stream FV below, this mirrors
-      // the two-line left side ($7/day + $210/mo) on the right.
-      const fvUnitByHorizon: Record<number, number> = {}
       horizons.forEach(h => {
-        const lumpValue = fvLump(monthAmt, r, h)
-        fvByHorizon[h] = lumpValue
-        horizonSums[h] += lumpValue
-        fvUnitByHorizon[h] = fvLump(item.usdAmt, r, h)
+        fvByHorizon[h] = fvLump(monthAmt, r, h)
         if (isRecurring) {
           const annual = item.usdAmt * freq
           fvRecurringByHorizon[h] = fvRecurring(annual, r, h, freq)
         }
+        // Totals sum the "headline" number of each row: recurring → full stream FV,
+        // once → one-time lump FV. Matches the single value now shown per row.
+        horizonSums[h] += isRecurring ? fvRecurringByHorizon[h] : fvByHorizon[h]
       })
       monthSaved += monthAmt
-      return { ...item, fvByHorizon, fvRecurringByHorizon, fvUnitByHorizon, isRecurring, freq, monthAmt }
+      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt }
     })
     return { enriched, monthSaved, horizonSums }
   }, [records, rate, viewMonth, horizons])
@@ -1354,9 +1350,9 @@ export default function App() {
                       </p>
                       {selectedRecords.map(r => {
                         const suffix = r.type === "recurring"
-                          ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/day")
-                            : r.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
-                            : (lang === "ko" ? "/월" : "/mo"))
+                          ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
+                            : r.freq === 52 ? (lang === "ko" ? "/주" : "/w")
+                            : (lang === "ko" ? "/월" : "/m"))
                           : ""
                         const dotColor = r.type !== "recurring" ? "bg-amber-400"
                           : r.freq === 365 ? "bg-emerald-400"
@@ -1385,9 +1381,9 @@ export default function App() {
                         {lang === "ko" ? "이 달 반복" : "Recurring this month"}
                       </p>
                       {recurringThisMonth.map(r => {
-                        const suffix = r.freq === 365 ? (lang === "ko" ? "/일" : "/day")
-                          : r.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
-                          : (lang === "ko" ? "/월" : "/mo")
+                        const suffix = r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
+                          : r.freq === 52 ? (lang === "ko" ? "/주" : "/w")
+                          : (lang === "ko" ? "/월" : "/m")
                         const dotColor = r.freq === 365 ? "bg-emerald-400"
                           : r.freq === 52 ? "bg-sky-400"
                           : "bg-violet-400"
@@ -1435,11 +1431,11 @@ export default function App() {
               <div className="max-h-80 overflow-y-auto">
                 {historySummary.enriched.map((item, index) => {
                   const freqSuffix = item.isRecurring
-                    ? item.freq === 365 ? (lang === "ko" ? "/일" : "/day")
-                    : item.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
-                    : (lang === "ko" ? "/월" : "/mo")
+                    ? item.freq === 365 ? (lang === "ko" ? "/일" : "/d")
+                    : item.freq === 52 ? (lang === "ko" ? "/주" : "/w")
+                    : (lang === "ko" ? "/월" : "/m")
                     : ""
-                  const moSuffix = lang === "ko" ? "/월" : "/mo"
+                  const moSuffix = lang === "ko" ? "/월" : "/m"
                   // Show monthly equivalent only when the entered unit isn't already monthly
                   const showMonthlyEq = item.isRecurring && item.freq !== 12
                   return (
@@ -1479,21 +1475,15 @@ export default function App() {
                         )}
                       </button>
                       {horizons.map(h => {
-                        // Mirror the left side's two-line structure on the right:
-                        //   line 1 = FV of the entered unit amount (\$7 alone over h years)
-                        //   line 2 = FV of the monthly-equivalent stream over h years
-                        // Monthly recurring collapses to a single line (the entered unit IS the stream).
-                        const primaryFv = item.isRecurring && item.freq === 12
+                        // Single-number right column: recurring items show the full
+                        // stream FV (what the habit becomes if continued), once items
+                        // show the lump-sum FV. No more unit + parens double-number.
+                        const headlineFv = item.isRecurring
                           ? item.fvRecurringByHorizon[h]
-                          : item.fvUnitByHorizon[h]
+                          : item.fvByHorizon[h]
                         return (
                           <div key={h} className={`w-14 text-right ${theme.textAccent}`}>
-                            <div className="text-sm font-medium leading-5">{fmt(primaryFv)}</div>
-                            {showMonthlyEq && (
-                              <div className="text-xs font-normal text-muted-foreground leading-4">
-                                ({fmt(item.fvRecurringByHorizon[h])})
-                              </div>
-                            )}
+                            <div className="text-sm font-medium leading-5">{fmt(headlineFv)}</div>
                           </div>
                         )
                       })}
@@ -2185,12 +2175,12 @@ export default function App() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {fmt(ex.usd)}{ex.isRecurring
-                        ? ex.freq === 365 ? (lang === "ko" ? "/일" : "/day")
-                        : ex.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
-                        : (lang === "ko" ? "/월" : "/mo")
+                        ? ex.freq === 365 ? (lang === "ko" ? "/일" : "/d")
+                        : ex.freq === 52 ? (lang === "ko" ? "/주" : "/w")
+                        : (lang === "ko" ? "/월" : "/m")
                         : (lang === "ko" ? " 일회성" : " once")}
                       {ex.isRecurring && ex.freq !== 12 && (
-                        <span> · {fmt(ex.monthly)}{lang === "ko" ? "/월" : "/mo"}</span>
+                        <span> · {fmt(ex.monthly)}{lang === "ko" ? "/월" : "/m"}</span>
                       )}
                     </div>
                   </div>
