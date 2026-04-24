@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, Calendar, List } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, Calendar, List, Tag, Pencil } from "lucide-react"
 import { useAuth } from "@/lib/useAuth"
 import { useCloudSync } from "@/lib/useCloudSync"
 import type { LucideIcon } from "lucide-react"
@@ -53,6 +53,14 @@ type Goal = {
   // Phase 1: added for future shared-goal support. All existing goals default to "personal".
   // Phase 2 will introduce memberIds/inviteToken + Firestore shared collection.
   type?: GoalType
+}
+
+type CustomPreset = {
+  id: string
+  name: string
+  usdAmt: number
+  mode: Mode
+  freq?: number // 365/52/12 when recurring
 }
 
 const KRW_RATE_FALLBACK = 1380
@@ -186,13 +194,16 @@ const presetItems: {
   defaultMode: Mode
   defaultFreq?: FrequencyValue
 }[] = [
+  // Ordered by expected usage frequency — the everyday skips come first so the
+  // most-tapped chips are the closest to the name field, and the rarer big-ticket
+  // items trail at the end where they're easier to ignore.
   { key: "coffee", Icon: Coffee, usd: 7, defaultMode: "once" },
-  { key: "bag", Icon: ShoppingBag, usd: 800, defaultMode: "once" },
-  { key: "clothes", Icon: Shirt, usd: 150, defaultMode: "once" },
+  { key: "dining", Icon: UtensilsCrossed, usd: 60, defaultMode: "once" },
   { key: "delivery", Icon: Utensils, usd: 25, defaultMode: "once" },
   { key: "subscription", Icon: Tv, usd: 15, defaultMode: "recurring", defaultFreq: "12" },
   { key: "impulse", Icon: ShoppingCart, usd: 50, defaultMode: "once" },
-  { key: "dining", Icon: UtensilsCrossed, usd: 60, defaultMode: "once" },
+  { key: "bag", Icon: ShoppingBag, usd: 800, defaultMode: "once" },
+  { key: "clothes", Icon: Shirt, usd: 150, defaultMode: "once" },
 ]
 
 function fvLump(p: number, r: number, y: number) {
@@ -251,6 +262,12 @@ export default function App() {
   const [monthViewMode, setMonthViewMode] = useState<"list" | "calendar">("list")
   // Which day is expanded in the calendar. null = show month summary.
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
+  // User-defined preset chips that sit alongside the built-in ones on the add screen.
+  const [customPresets, setCustomPresets] = useState<CustomPreset[]>([])
+  // Category editor modal state. If editingCategory is set we're editing that one;
+  // otherwise the modal is in "add new" mode.
+  const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<CustomPreset | null>(null)
   // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
   // rendering a single column without a broader refactor.
   const [horizons, setHorizons] = useState<number[]>([10])
@@ -329,6 +346,22 @@ export default function App() {
         // Migrate legacy multi-select saves down to a single horizon.
         setHorizons([p.horizons[0] as number])
       }
+      if (Array.isArray(p.customPresets)) {
+        const valid = p.customPresets
+          .filter((c: unknown): c is Record<string, unknown> =>
+            !!c && typeof c === "object"
+            && typeof (c as Record<string, unknown>).id === "string"
+            && typeof (c as Record<string, unknown>).name === "string"
+            && typeof (c as Record<string, unknown>).usdAmt === "number")
+          .map((c: Record<string, unknown>): CustomPreset => ({
+            id: c.id as string,
+            name: c.name as string,
+            usdAmt: c.usdAmt as number,
+            mode: c.mode === "recurring" ? "recurring" : "once",
+            freq: typeof c.freq === "number" ? c.freq : undefined,
+          }))
+        setCustomPresets(valid)
+      }
       if (typeof p.examplesDismissed === "boolean") setExamplesDismissed(p.examplesDismissed)
       if (p.goal && typeof p.goal === "object" && typeof p.goal.targetUsd === "number") {
         // Validate iconKey, default to target if unknown
@@ -353,10 +386,10 @@ export default function App() {
     if (auth.configured && !auth.user) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
-      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal,
+      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets,
       krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt,
     }))
-  }, [hydrated, auth.configured, auth.user, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
+  }, [hydrated, auth.configured, auth.user, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
 
   // When Firebase is configured and user is signed out, ensure localStorage stays clean so that
   // the next sign-in pulls fresh data from Firestore instead of pushing stale local state up.
@@ -1937,6 +1970,119 @@ export default function App() {
             </div>
           )}
 
+          {/* Category editor modal (add new or edit/delete existing custom preset) */}
+          {categoryEditorOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setCategoryEditorOpen(false)}>
+              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
+                <p className="font-semibold">
+                  {editingCategory
+                    ? (lang === "ko" ? "카테고리 편집" : "Edit category")
+                    : (lang === "ko" ? "새 카테고리" : "New category")}
+                </p>
+                <div className="space-y-1">
+                  <Label className="text-xs">{lang === "ko" ? "이름" : "Name"}</Label>
+                  <Input
+                    autoFocus
+                    defaultValue={editingCategory?.name ?? ""}
+                    maxLength={20}
+                    id="cat-name-input"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{currency === "KRW" ? t.amountKRW : t.amountUSD}</Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    defaultValue={editingCategory
+                      ? (currency === "KRW"
+                        ? String(Math.round(editingCategory.usdAmt * krwRate))
+                        : String(editingCategory.usdAmt))
+                      : ""}
+                    id="cat-amount-input"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{lang === "ko" ? "빈도" : "Frequency"}</Label>
+                  <div className="flex rounded-lg border border-border overflow-hidden">
+                    {([
+                      { label: t.oneTime, mode: "once" as Mode, freq: 1 },
+                      { label: t.daily, mode: "recurring" as Mode, freq: 365 },
+                      { label: t.weekly, mode: "recurring" as Mode, freq: 52 },
+                      { label: t.monthly, mode: "recurring" as Mode, freq: 12 },
+                    ]).map((opt, i, arr) => {
+                      const currentMode = editingCategory?.mode ?? "once"
+                      const currentFreq = editingCategory?.freq ?? (currentMode === "recurring" ? 12 : 1)
+                      const isActive = opt.mode === "once"
+                        ? currentMode === "once"
+                        : currentMode === "recurring" && currentFreq === opt.freq
+                      return (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          data-cat-freq-btn
+                          data-mode={opt.mode}
+                          data-freq={opt.freq}
+                          data-active={isActive ? "true" : undefined}
+                          onClick={() => {
+                            document.querySelectorAll("[data-cat-freq-btn]").forEach(el => el.removeAttribute("data-active"))
+                            ;(document.querySelector(`[data-cat-freq-btn][data-mode="${opt.mode}"][data-freq="${opt.freq}"]`) as HTMLElement | null)?.setAttribute("data-active", "true")
+                          }}
+                          className={`flex-1 py-2 text-xs font-semibold transition-colors ${i < arr.length - 1 ? "border-r border-border" : ""} data-[active=true]:bg-primary data-[active=true]:text-primary-foreground text-muted-foreground hover:text-foreground`}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-3">
+                  {editingCategory && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (window.confirm(lang === "ko" ? "카테고리를 삭제할까요?" : "Delete this category?")) {
+                          setCustomPresets(prev => prev.filter(c => c.id !== editingCategory.id))
+                          setCategoryEditorOpen(false)
+                        }
+                      }}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      {lang === "ko" ? "삭제" : "Delete"}
+                    </Button>
+                  )}
+                  <Button variant="outline" className="flex-1" onClick={() => setCategoryEditorOpen(false)}>
+                    {lang === "ko" ? "취소" : "Cancel"}
+                  </Button>
+                  <Button className="flex-1" onClick={() => {
+                    const nameInput = document.getElementById("cat-name-input") as HTMLInputElement
+                    const amtInput = document.getElementById("cat-amount-input") as HTMLInputElement
+                    const activeFreq = document.querySelector<HTMLElement>("[data-cat-freq-btn][data-active=true]")
+                    const name = nameInput.value.trim()
+                    if (!name) { nameInput.focus(); return }
+                    const raw = parseFloat(amtInput.value)
+                    if (!Number.isFinite(raw) || raw <= 0) { amtInput.focus(); return }
+                    const usd = currency === "KRW" ? raw / krwRate : raw
+                    const pickedMode = (activeFreq?.dataset.mode as Mode | undefined) ?? editingCategory?.mode ?? "once"
+                    const pickedFreq = activeFreq?.dataset.freq ? parseInt(activeFreq.dataset.freq, 10) : undefined
+                    const next: CustomPreset = {
+                      id: editingCategory?.id ?? crypto.randomUUID(),
+                      name,
+                      usdAmt: usd,
+                      mode: pickedMode,
+                      freq: pickedMode === "recurring" ? (pickedFreq ?? 12) : undefined,
+                    }
+                    setCustomPresets(prev => editingCategory
+                      ? prev.map(c => c.id === next.id ? next : c)
+                      : [...prev, next])
+                    setCategoryEditorOpen(false)
+                  }}>
+                    {lang === "ko" ? "저장" : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Example table */}
           {!examplesDismissed && (
           <div className="mt-1">
@@ -2043,12 +2189,12 @@ export default function App() {
                 maxLength={40}
                 className="h-8 text-sm"
               />
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ WebkitOverflowScrolling: "touch" }}>
+              <div className="flex flex-wrap gap-1.5">
                 {presetItems.map(item => (
                   <Badge
                     key={item.key}
                     variant="secondary"
-                    className="cursor-pointer rounded-full px-2 py-0.5 text-xs whitespace-nowrap flex-shrink-0"
+                    className="cursor-pointer rounded-full px-2 py-0.5 text-xs whitespace-nowrap"
                     onClick={() => {
                       setItemName(t.presets[item.key])
                       setAmount(currency === "KRW"
@@ -2063,6 +2209,45 @@ export default function App() {
                     <item.Icon className="mr-1 h-3 w-3" strokeWidth={1.5} />{t.presets[item.key]}
                   </Badge>
                 ))}
+                {customPresets.map(cp => (
+                  <div
+                    key={cp.id}
+                    className="inline-flex items-center rounded-full bg-secondary text-secondary-foreground text-xs whitespace-nowrap"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setItemName(cp.name)
+                        setAmount(currency === "KRW"
+                          ? String(Math.round(cp.usdAmt * krwRate / 1000) * 1000)
+                          : String(cp.usdAmt))
+                        setMode(cp.mode)
+                        if (cp.mode === "recurring" && cp.freq) {
+                          setFrequency(String(cp.freq) as FrequencyValue)
+                        }
+                      }}
+                      className="flex items-center gap-1 pl-2 py-0.5 font-semibold hover:opacity-80"
+                    >
+                      <Tag className="h-3 w-3" strokeWidth={1.5} />{cp.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingCategory(cp); setCategoryEditorOpen(true) }}
+                      className="px-1.5 py-0.5 text-muted-foreground hover:text-foreground"
+                      aria-label={lang === "ko" ? "편집" : "Edit"}
+                    >
+                      <Pencil className="h-3 w-3" strokeWidth={1.5} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => { setEditingCategory(null); setCategoryEditorOpen(true) }}
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40"
+                >
+                  <Plus className="h-3 w-3" strokeWidth={1.5} />
+                  {lang === "ko" ? "새 카테고리" : "New"}
+                </button>
               </div>
             </CardContent>
           </Card>
