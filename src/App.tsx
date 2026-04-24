@@ -1421,8 +1421,11 @@ export default function App() {
                 <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />{lang === "ko" ? "일회" : "Once"}</span>
               </div>
               {/* Header row */}
-              <div className="flex items-center border-b border-border px-4 py-2">
+              {/* Three-column grid: name | now (entered + monthly eq) | in-horizon FV.
+                  Same gap + widths used in every row below so columns line up cleanly. */}
+              <div className="flex items-center border-b border-border px-4 py-2 gap-3">
                 <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
+                <span className="w-20 text-right text-xs font-semibold text-muted-foreground">{lang === "ko" ? "현재" : "Now"}</span>
                 {horizons.map(h => (
                   <span key={h} className="w-14 text-right text-xs font-semibold text-muted-foreground">
                     {lang === "ko" ? `${h}년 후` : `In ${h}Y`}
@@ -1442,45 +1445,40 @@ export default function App() {
                   // Show monthly equivalent only when the entered unit isn't already monthly
                   const showMonthlyEq = item.isRecurring && item.freq !== 12
                   return (
-                    <div key={item.id} className={`flex items-start px-4 py-2.5 ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
+                    <div key={item.id} className={`flex items-start px-4 py-2.5 gap-3 ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
                       <button
                         className="flex-1 min-w-0 text-left"
                         onClick={() => setEditingRecord(item)}
                         aria-label={lang === "ko" ? "편집" : "Edit"}
                       >
-                        {/* Line 1: name on the left, the entered unit amount + frequency on the right.
-                            Small colored dot mirrors the calendar legend so a glance at either view
-                            conveys the same "this is daily/weekly/monthly/once" signal. */}
-                        <div className="flex items-baseline justify-between gap-2 leading-5">
-                          <span className="flex flex-1 items-baseline gap-1.5 min-w-0">
-                            <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
-                              item.isRecurring
-                                ? item.freq === 365 ? "bg-emerald-400"
-                                : item.freq === 52 ? "bg-sky-400"
-                                : "bg-violet-400"
-                                : "bg-amber-400"
-                            }`} />
-                            <span className="text-sm font-semibold truncate">{item.name}</span>
-                          </span>
-                          {/* Line 1 shows the normalized monthly figure so every recurring row is
-                              comparable at a glance. Whatever unit the user actually entered moves
-                              into parens on line 2 — same pattern as the future-value column. */}
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {showMonthlyEq
-                              ? `${fmtExact(item.monthAmt)}${moSuffix}`
-                              : `${fmtExact(item.usdAmt)}${freqSuffix}`}
-                          </span>
+                        <div className="flex items-center gap-1.5 leading-5">
+                          <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                            item.isRecurring
+                              ? item.freq === 365 ? "bg-emerald-400"
+                              : item.freq === 52 ? "bg-sky-400"
+                              : "bg-violet-400"
+                              : "bg-amber-400"
+                          }`} />
+                          <span className="text-sm font-semibold truncate">{item.name}</span>
+                        </div>
+                      </button>
+                      {/* Now column: monthly (or entered if already monthly/once) on line 1,
+                          entered unit in parens on line 2 for daily/weekly recurring */}
+                      <div className="w-20 text-right">
+                        <div className="text-xs text-muted-foreground leading-5 whitespace-nowrap">
+                          {showMonthlyEq
+                            ? `${fmtExact(item.monthAmt)}${moSuffix}`
+                            : `${fmtExact(item.usdAmt)}${freqSuffix}`}
                         </div>
                         {showMonthlyEq && (
-                          <div className="flex justify-end text-xs text-muted-foreground leading-4">
+                          <div className="text-xs text-muted-foreground leading-4 whitespace-nowrap">
                             ({fmtExact(item.usdAmt)}{freqSuffix})
                           </div>
                         )}
-                      </button>
+                      </div>
                       {horizons.map(h => {
-                        // Single-number right column: recurring items show the full
-                        // stream FV (what the habit becomes if continued), once items
-                        // show the lump-sum FV. No more unit + parens double-number.
+                        // Recurring items show the full stream FV (what the habit
+                        // becomes if continued), once items show the lump-sum FV.
                         const headlineFv = item.isRecurring
                           ? item.fvRecurringByHorizon[h]
                           : item.fvByHorizon[h]
@@ -1495,23 +1493,16 @@ export default function App() {
                 })}
               </div>
 
-              {/* Totals — labels on one row, amounts on the next, all column-aligned */}
+              {/* Totals — mirrors the three-column header so everything lines up.
+                  "Month Total" spans Item + Now columns (one label, one value). */}
               <div className="border-t-2 border-border bg-muted/40 px-4 py-2.5">
-                {/* Label row */}
-                <div className="flex items-center">
+                <div className="flex items-center gap-3">
                   <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {lang === "ko" ? "이 달 합계" : "Month total"}
                   </span>
-                  <span
-                    className="text-right text-[10px] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap"
-                    style={{ width: `${horizons.length * 3.5}rem` }}
-                  >
-                    {lang === "ko" ? "미래" : "Future"}
+                  <span className="w-20 text-right text-base font-extrabold">
+                    {fmt(historySummary.monthSaved)}
                   </span>
-                </div>
-                {/* Amount row */}
-                <div className="mt-1 flex items-center">
-                  <span className="flex-1 text-base font-extrabold">{fmt(historySummary.monthSaved)}</span>
                   {horizons.map(h => (
                     <div key={h} className={`w-14 text-right text-sm font-bold ${theme.textAccent}`}>
                       {fmt(historySummary.horizonSums[h])}
