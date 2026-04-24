@@ -1247,7 +1247,6 @@ export default function App() {
             const firstWeekday = new Date(viewMonth.year, viewMonth.month, 1).getDay()
             const viewAbs = viewMonth.year * 12 + viewMonth.month
             const recordsByDay = new Map<number, RecordItem[]>()
-            const recurringThisMonth: RecordItem[] = []
             const msPerDay = 86400000
             for (let day = 1; day <= daysInMonth; day++) {
               const dayDate = new Date(viewMonth.year, viewMonth.month, day)
@@ -1279,20 +1278,24 @@ export default function App() {
               }
               if (active.length > 0) recordsByDay.set(day, active)
             }
-            // Build the "Recurring this month" footer too, for a quick-scan list +
-            // one-tap edit of recurring items without hunting through the grid.
-            records.forEach(r => {
-              if (r.type !== "recurring") return
-              const d = new Date(r.date)
-              const startAbs = d.getFullYear() * 12 + d.getMonth()
-              const endedBefore = typeof r.endYear === "number" && typeof r.endMonth === "number"
-                && (r.endYear * 12 + r.endMonth) <= viewAbs
-              if (startAbs <= viewAbs && !endedBefore) recurringThisMonth.push(r)
-            })
             const weekdayLabels = lang === "ko"
               ? ["일", "월", "화", "수", "목", "금", "토"]
               : ["S", "M", "T", "W", "T", "F", "S"]
-            const selectedRecords = selectedDay !== null ? (recordsByDay.get(selectedDay) ?? []) : []
+            // Sort the selected-day list the same way the main list is sorted:
+            // monthly → weekly → daily → once, amount desc within each group.
+            const calFreqRank = (r: RecordItem) => {
+              if (r.type !== "recurring") return 3
+              if (r.freq === 12) return 0
+              if (r.freq === 52) return 1
+              return 2
+            }
+            const selectedRecords = selectedDay !== null
+              ? [...(recordsByDay.get(selectedDay) ?? [])].sort((a, b) => {
+                const fd = calFreqRank(a) - calFreqRank(b)
+                if (fd !== 0) return fd
+                return b.usdAmt - a.usdAmt
+              })
+              : []
             return (
               <Card>
                 <CardContent className="p-3 space-y-3">
@@ -1347,65 +1350,40 @@ export default function App() {
                       )
                     })}
                   </div>
-                  {/* Selected day details */}
+                  {/* Selected day details — scrollable so the card height is bounded
+                      on phone screens even when the active list is long. Recurring-
+                      this-month footer removed: dots on the grid already signal that. */}
                   {selectedDay !== null && selectedRecords.length > 0 && (
-                    <div className="border-t border-border pt-2 space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <div className="border-t border-border pt-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                         {lang === "ko" ? `${viewMonth.month + 1}월 ${selectedDay}일` : new Date(viewMonth.year, viewMonth.month, selectedDay).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                       </p>
-                      {selectedRecords.map(r => {
-                        const suffix = r.type === "recurring"
-                          ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
-                            : r.freq === 52 ? (lang === "ko" ? "/주" : "/w")
-                            : (lang === "ko" ? "/월" : "/m"))
-                          : ""
-                        const dotColor = r.type !== "recurring" ? "bg-amber-400"
-                          : r.freq === 365 ? "bg-emerald-400"
-                          : r.freq === 52 ? "bg-sky-400"
-                          : "bg-violet-400"
-                        return (
-                          <button
-                            key={r.id}
-                            onClick={() => setEditingRecord(r)}
-                            className="flex w-full items-center justify-between py-1 text-left"
-                          >
-                            <span className="flex items-center gap-1.5 flex-1 min-w-0">
-                              <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
-                              <span className="text-sm font-semibold truncate">{r.name}</span>
-                            </span>
-                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {/* Recurring summary */}
-                  {recurringThisMonth.length > 0 && (
-                    <div className="border-t border-border pt-2 space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {lang === "ko" ? "이 달 반복" : "Recurring this month"}
-                      </p>
-                      {recurringThisMonth.map(r => {
-                        const suffix = r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
-                          : r.freq === 52 ? (lang === "ko" ? "/주" : "/w")
-                          : (lang === "ko" ? "/월" : "/m")
-                        const dotColor = r.freq === 365 ? "bg-emerald-400"
-                          : r.freq === 52 ? "bg-sky-400"
-                          : "bg-violet-400"
-                        return (
-                          <button
-                            key={r.id}
-                            onClick={() => setEditingRecord(r)}
-                            className="flex w-full items-center justify-between py-1 text-left"
-                          >
-                            <span className="flex items-center gap-1.5 flex-1 min-w-0">
-                              <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
-                              <span className="text-sm font-semibold truncate">{r.name}</span>
-                            </span>
-                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
-                          </button>
-                        )
-                      })}
+                      <div className="max-h-48 overflow-y-auto space-y-1 [scrollbar-gutter:stable]">
+                        {selectedRecords.map(r => {
+                          const suffix = r.type === "recurring"
+                            ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
+                              : r.freq === 52 ? (lang === "ko" ? "/주" : "/w")
+                              : (lang === "ko" ? "/월" : "/m"))
+                            : ""
+                          const dotColor = r.type !== "recurring" ? "bg-amber-400"
+                            : r.freq === 365 ? "bg-emerald-400"
+                            : r.freq === 52 ? "bg-sky-400"
+                            : "bg-violet-400"
+                          return (
+                            <button
+                              key={r.id}
+                              onClick={() => setEditingRecord(r)}
+                              className="flex w-full items-center justify-between py-1 text-left"
+                            >
+                              <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+                                <span className="text-sm font-semibold truncate">{r.name}</span>
+                              </span>
+                              <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                   )}
                 </CardContent>
