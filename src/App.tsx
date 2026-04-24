@@ -470,18 +470,21 @@ export default function App() {
     let monthSaved = 0
     const horizonSums: Record<number, number> = {}
     horizons.forEach(h => { horizonSums[h] = 0 })
-    // Sort: by frequency rank (daily→weekly→monthly→once) primary, date desc secondary.
-    // Groups daily/weekly (two-line rows) at the top and monthly/once (single-line rows)
-    // at the bottom, which also smooths out the ragged row-height rhythm in the list.
+    // Sort: by frequency rank primary (monthly→weekly→daily→once, so the heavier
+    // monthly amounts lead for visual balance), then amount desc within each group
+    // so bigger items float to the top. Date desc only as a final tiebreaker.
     const freqRank = (item: RecordItem) => {
       if (item.type !== "recurring") return 3
-      if (item.freq === 365) return 0
+      if (item.freq === 12) return 0
       if (item.freq === 52) return 1
-      return 2
+      return 2 // freq 365 daily
     }
     const enriched = [...scoped].sort((a, b) => {
       const fd = freqRank(a) - freqRank(b)
-      return fd !== 0 ? fd : b.date - a.date
+      if (fd !== 0) return fd
+      const ad = b.usdAmt - a.usdAmt
+      if (ad !== 0) return ad
+      return b.date - a.date
     }).map(item => {
       // Legacy recurring records without freq default to monthly (12)
       const isRecurring = item.type === "recurring"
