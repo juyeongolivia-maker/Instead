@@ -3,7 +3,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, Calendar, List } from "lucide-react"
@@ -729,10 +728,6 @@ export default function App() {
     }
   }, [totalSaved, goal])
 
-  const heroLabel = lang === "ko"
-    ? `${years}${t.years} 후 미래가치`
-    : `${t.futureValueIn} ${years} ${t.years}`
-  const heroSub = `${t.principal} ${fmt(calc.principal)}${mode === "recurring" ? ` (${t.totalContributed})` : ""}`
   const noteText = t.note.replace("{rate}", rate)
 
   // ── Shared header ──
@@ -2112,51 +2107,97 @@ export default function App() {
                 : t.saveRecord}
           </Button>
 
-          {/* Preview (with period controls inside) */}
-          <div>
-            <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview</p>
-            <Card>
-              <CardContent className="px-5 py-4">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <div className="text-xs text-muted-foreground">{heroLabel}</div>
-                    <div className="mt-0.5 text-4xl font-black tracking-tight">{fmt(calc.fvMain)}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{heroSub}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-muted-foreground">{t.gain}</div>
-                    <div className={`mt-0.5 text-xl font-bold ${theme.textAccent}`}>+{fmt(calc.gain)}</div>
-                  </div>
-                </div>
-
-                {/* Period controls */}
-                <div className="mt-4 pt-4 border-t border-border">
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-xs text-muted-foreground">{t.investmentPeriod}</Label>
-                    <span className="text-sm font-bold">{years} {t.years}</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1.5 mb-2">
-                    {[5, 10, 20, 30].map(v => (
-                      <Button key={v} variant={years === v ? "default" : "outline"} size="sm"
-                        className="h-7 text-xs" onClick={() => setYears(v)}>
-                        {lang === "ko" ? `${v}년` : `${v}Y`}
-                      </Button>
-                    ))}
-                  </div>
-                  <Slider value={[years]} min={1} max={40} step={1}
-                    onValueChange={v => setYears(v[0] ?? 10)} />
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-border">
-                  <p className="text-xs text-muted-foreground">
+          {/* Preview — compact compound-growth curve from 0 to 30 years. The curve shape
+              IS the message (compounding accelerates), so it's intentionally understated. */}
+          {calc.usdAmt > 0 && (() => {
+            const r = parseFloat(rate) || 0
+            const freq = parseFloat(frequency)
+            const annual = calc.usdAmt * freq
+            const fvAt = (y: number) => mode === "once"
+              ? fvLump(calc.usdAmt, r, y)
+              : fvRecurring(annual, r, y, freq)
+            const maxY = 30
+            const values = Array.from({ length: maxY + 1 }, (_, i) => fvAt(i))
+            const vMax = values[maxY] || 1
+            const W = 320
+            const H = 90
+            const padT = 14
+            const padR = 36 // room for the rightmost "30y" label
+            const padL = 4
+            const padB = 14
+            const chartW = W - padL - padR
+            const chartH = H - padT - padB
+            const xAt = (y: number) => padL + (y / maxY) * chartW
+            const yAt = (v: number) => padT + (1 - v / vMax) * chartH
+            // Smooth cubic path through the value points
+            const pts = values.map((v, i) => ({ x: xAt(i), y: yAt(v) }))
+            let linePath = `M ${pts[0].x},${pts[0].y}`
+            for (let i = 1; i < pts.length; i++) {
+              const midX = (pts[i - 1].x + pts[i].x) / 2
+              linePath += ` C ${midX},${pts[i - 1].y} ${midX},${pts[i].y} ${pts[i].x},${pts[i].y}`
+            }
+            const areaPath = `${linePath} L ${pts[maxY].x},${padT + chartH} L ${pts[0].x},${padT + chartH} Z`
+            const gradId = `preview-${theme.primaryHsl.replace(/[^a-z0-9]/gi, "")}`
+            const anchors = [10, 20, 30]
+            return (
+              <Card className="bg-muted/30">
+                <CardContent className="px-4 py-3 space-y-1">
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor={`hsl(${theme.primaryHsl})`} stopOpacity="0.22" />
+                        <stop offset="100%" stopColor={`hsl(${theme.primaryHsl})`} stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <path d={areaPath} fill={`url(#${gradId})`} />
+                    <path
+                      d={linePath}
+                      fill="none"
+                      stroke={`hsl(${theme.primaryHsl})`}
+                      strokeWidth={1.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={0.85}
+                    />
+                    {anchors.map(y => {
+                      const cx = xAt(y)
+                      const cy = yAt(values[y])
+                      const isEnd = y === maxY
+                      return (
+                        <g key={y}>
+                          <circle cx={cx} cy={cy} r={2.5} fill={`hsl(${theme.primaryHsl})`} />
+                          <text
+                            x={isEnd ? cx + 5 : cx}
+                            y={isEnd ? cy + 3 : cy - 5}
+                            textAnchor={isEnd ? "start" : "middle"}
+                            className="fill-foreground"
+                            fontSize="10"
+                            fontWeight="600"
+                          >
+                            {fmt(values[y])}
+                          </text>
+                          <text
+                            x={cx}
+                            y={H - 3}
+                            textAnchor="middle"
+                            className="fill-muted-foreground"
+                            fontSize="9"
+                          >
+                            {lang === "ko" ? `${y}년` : `${y}Y`}
+                          </text>
+                        </g>
+                      )
+                    })}
+                  </svg>
+                  <p className="text-[10px] text-muted-foreground text-center">
                     {lang === "ko"
-                      ? `연 ${rate}% 복리로 ${years}년간 굴렸을 때예요. 복리는 수익이 수익을 낳아요.`
-                      : `At ${rate}%/yr compounded over ${years} years. Compound interest means your gains earn gains.`}
+                      ? `연 ${rate}% 복리 가정`
+                      : `Assuming ${rate}%/yr compound`}
                   </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                </CardContent>
+              </Card>
+            )
+          })()}
 
           <p className="text-center text-xs text-muted-foreground">{noteText}</p>
         </div>
