@@ -1421,20 +1421,21 @@ export default function App() {
                 <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />{lang === "ko" ? "일회" : "Once"}</span>
               </div>
               {/* Header row */}
-              {/* Three-column grid: name | now (entered + monthly eq) | in-horizon FV.
-                  Same gap + widths used in every row below so columns line up cleanly. */}
-              <div className="flex items-center border-b border-border px-4 py-2 gap-3">
-                <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
-                <span className="w-20 text-right text-xs font-semibold text-muted-foreground">{lang === "ko" ? "현재" : "Now"}</span>
-                {horizons.map(h => (
-                  <span key={h} className="w-14 text-right text-xs font-semibold text-muted-foreground">
-                    {lang === "ko" ? `${h}년 후` : `In ${h}Y`}
-                  </span>
-                ))}
-              </div>
-              {/* Scroll the row list inside the card once it exceeds ~6 rows, so the totals
-                  stay visible without pushing the goal card off-screen. */}
+              {/* Scroll the rows inside the card (header + rows in same scroll container
+                  so a visible scrollbar eats width from both, keeping columns aligned).
+                  Header sticks to the top as the user scrolls. */}
               <div className="max-h-80 overflow-y-auto [scrollbar-gutter:stable]">
+                {/* Three-column grid: name | now (entered + monthly eq) | in-horizon FV.
+                    Same gap + widths used in every row below so columns line up cleanly. */}
+                <div className="sticky top-0 z-10 flex items-center border-b border-border bg-background px-4 py-2 gap-3">
+                  <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
+                  <span className="w-20 text-right text-xs font-semibold text-muted-foreground">{lang === "ko" ? "현재" : "Now"}</span>
+                  {horizons.map(h => (
+                    <span key={h} className="w-14 text-right text-xs font-semibold text-muted-foreground">
+                      {lang === "ko" ? `${h}년 후` : `In ${h}Y`}
+                    </span>
+                  ))}
+                </div>
                 {historySummary.enriched.map((item, index) => {
                   const freqSuffix = item.isRecurring
                     ? item.freq === 365 ? (lang === "ko" ? "/일" : "/d")
@@ -1491,23 +1492,25 @@ export default function App() {
                     </div>
                   )
                 })}
-              </div>
 
-              {/* Totals — mirrors the three-column header so everything lines up.
-                  "Month Total" spans Item + Now columns (one label, one value). */}
-              <div className="border-t-2 border-border bg-muted/40 px-4 py-2.5">
-                <div className="flex items-center gap-3">
-                  <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {lang === "ko" ? "이 달 합계" : "Month total"}
-                  </span>
-                  <span className="w-20 text-right text-base font-extrabold">
-                    {fmt(historySummary.monthSaved)}
-                  </span>
-                  {horizons.map(h => (
-                    <div key={h} className={`w-14 text-right text-sm font-bold ${theme.textAccent}`}>
-                      {fmt(historySummary.horizonSums[h])}
-                    </div>
-                  ))}
+                {/* Totals live inside the same scroll container so they share the exact
+                    same effective width as the rows above — including the reserved
+                    scrollbar gutter. Sticky-bottom keeps the month sum visible while the
+                    user scrolls through a long list. */}
+                <div className="sticky bottom-0 z-10 border-t-2 border-border bg-muted/40 px-4 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {lang === "ko" ? "이 달 합계" : "Month total"}
+                    </span>
+                    <span className="w-20 text-right text-base font-extrabold">
+                      {fmt(historySummary.monthSaved)}
+                    </span>
+                    {horizons.map(h => (
+                      <div key={h} className={`w-14 text-right text-sm font-bold ${theme.textAccent}`}>
+                        {fmt(historySummary.horizonSums[h])}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </Card>
