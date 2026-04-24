@@ -1358,14 +1358,21 @@ export default function App() {
                             : r.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
                             : (lang === "ko" ? "/월" : "/mo"))
                           : ""
+                        const dotColor = r.type !== "recurring" ? "bg-amber-400"
+                          : r.freq === 365 ? "bg-emerald-400"
+                          : r.freq === 52 ? "bg-sky-400"
+                          : "bg-violet-400"
                         return (
                           <button
                             key={r.id}
                             onClick={() => setEditingRecord(r)}
                             className="flex w-full items-center justify-between py-1 text-left"
                           >
-                            <span className="text-sm font-semibold truncate flex-1 min-w-0">{r.name}</span>
-                            <span className="text-xs text-muted-foreground ml-2">{fmtExact(r.usdAmt)}{suffix}</span>
+                            <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+                              <span className="text-sm font-semibold truncate">{r.name}</span>
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmtExact(r.usdAmt)}{suffix}</span>
                           </button>
                         )
                       })}
@@ -1381,14 +1388,20 @@ export default function App() {
                         const suffix = r.freq === 365 ? (lang === "ko" ? "/일" : "/day")
                           : r.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
                           : (lang === "ko" ? "/월" : "/mo")
+                        const dotColor = r.freq === 365 ? "bg-emerald-400"
+                          : r.freq === 52 ? "bg-sky-400"
+                          : "bg-violet-400"
                         return (
                           <button
                             key={r.id}
                             onClick={() => setEditingRecord(r)}
                             className="flex w-full items-center justify-between py-1 text-left"
                           >
-                            <span className="text-sm font-semibold truncate flex-1 min-w-0">{r.name}</span>
-                            <span className="text-xs text-muted-foreground ml-2">{fmtExact(r.usdAmt)}{suffix}</span>
+                            <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+                              <span className="text-sm font-semibold truncate">{r.name}</span>
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2 whitespace-nowrap">{fmtExact(r.usdAmt)}{suffix}</span>
                           </button>
                         )
                       })}
