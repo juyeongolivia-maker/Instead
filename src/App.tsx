@@ -1160,8 +1160,8 @@ export default function App() {
                         onClick={() => setEditingRecord(item)}
                         aria-label={lang === "ko" ? "편집" : "Edit"}
                       >
-                        <div className="font-semibold truncate">{item.name}</div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm font-semibold truncate leading-5">{item.name}</div>
+                        <div className="text-xs text-muted-foreground leading-4">
                           {fmtExact(item.monthAmt)}
                           {item.isRecurring && item.freq !== 12 && (
                             <span> ({fmtExact(item.usdAmt)}{freqSuffix})</span>
@@ -1172,10 +1172,10 @@ export default function App() {
                         </div>
                       </button>
                       {horizons.map(h => (
-                        <div key={h} className={`w-14 text-right text-xs font-medium ${theme.textAccent}`}>
-                          <div>{fmt(item.fvByHorizon[h])}</div>
+                        <div key={h} className={`w-14 text-right ${theme.textAccent}`}>
+                          <div className="text-sm font-medium leading-5">{fmt(item.fvByHorizon[h])}</div>
                           {item.isRecurring && (
-                            <div className="text-[10px] font-normal text-muted-foreground">
+                            <div className="text-xs font-normal text-muted-foreground leading-4">
                               ({fmt(item.fvRecurringByHorizon[h])})
                             </div>
                           )}
@@ -1268,19 +1268,20 @@ export default function App() {
                         </span>
                       </div>
                     )}
-                    {/* Main row: name + target amount on left, "if invested instead" horizons on right */}
+                    {/* Main row: name + target amount on left, "if invested instead" horizons on right.
+                        Sizes match the records list so columns line up visually. */}
                     <div className="flex items-start">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 leading-5">
                           <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
-                          <span className="font-semibold truncate">{goal.name}</span>
+                          <span className="text-sm font-semibold truncate">{goal.name}</span>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
+                        <div className="text-xs text-muted-foreground leading-4">
                           {fmtExact(goal.targetUsd)}
                         </div>
                       </div>
                       {horizons.map(h => (
-                        <div key={h} className={`w-14 text-right text-xs font-medium ${theme.textAccent}`}>
+                        <div key={h} className={`w-14 text-right text-sm font-medium leading-5 ${theme.textAccent}`}>
                           {fmt(fvLump(goal.targetUsd, goalRate, h))}
                         </div>
                       ))}
