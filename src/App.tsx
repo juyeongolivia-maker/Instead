@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, Calendar, List } from "lucide-react"
 import { useAuth } from "@/lib/useAuth"
 import { useCloudSync } from "@/lib/useCloudSync"
 import type { LucideIcon } from "lucide-react"
@@ -248,6 +248,10 @@ export default function App() {
     const d = new Date()
     return { year: d.getFullYear(), month: d.getMonth() }
   })
+  // Toggle between list and calendar layout for the month view
+  const [monthViewMode, setMonthViewMode] = useState<"list" | "calendar">("list")
+  // Which day is expanded in the calendar. null = show month summary.
+  const [selectedDay, setSelectedDay] = useState<number | null>(null)
   // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
   // rendering a single column without a broader refactor.
   const [horizons, setHorizons] = useState<number[]>([10])
@@ -542,11 +546,16 @@ export default function App() {
 
   function saveRecord() {
     if (calc.usdAmt <= 0) return
+    // When adding from a non-current month view, anchor the record to the 1st of
+    // that month so it lands in the user's current context instead of "today".
+    const now = new Date()
+    const onCurrent = viewMonth.year === now.getFullYear() && viewMonth.month === now.getMonth()
+    const ts = onCurrent ? Date.now() : new Date(viewMonth.year, viewMonth.month, 1, 12).getTime()
     setRecords(prev => [{
       id: crypto.randomUUID(),
       name: itemName.trim() || t.unnamed,
       usdAmt: calc.usdAmt,
-      date: Date.now(),
+      date: ts,
       type: mode,
       freq: mode === "recurring" ? (parseFloat(frequency) || 12) : 1,
     }, ...prev])
@@ -571,14 +580,15 @@ export default function App() {
     }))
   }
 
-  function updateRecord(id: string, name: string, usdAmt?: number, mode?: Mode, freq?: number) {
+  function updateRecord(id: string, name: string, usdAmt?: number, mode?: Mode, freq?: number, date?: number) {
     setRecords(prev => prev.map(r => {
       if (r.id !== id) return r
       const nextAmt = usdAmt !== undefined && usdAmt > 0 ? usdAmt : r.usdAmt
       const nextType = mode ?? r.type
       // freq: 1 for once, 365/52/12 for daily/weekly/monthly
       const nextFreq = nextType === "once" ? 1 : (freq ?? r.freq ?? 12)
-      return { ...r, name, usdAmt: nextAmt, type: nextType, freq: nextFreq }
+      const nextDate = typeof date === "number" && Number.isFinite(date) ? date : r.date
+      return { ...r, name, usdAmt: nextAmt, type: nextType, freq: nextFreq, date: nextDate }
     }))
     setEditingRecord(null)
   }
@@ -1085,9 +1095,25 @@ export default function App() {
             )
           })()}
 
-          {/* Horizon selector (dropdown) */}
+          {/* View mode toggle (list / calendar) + horizon selector */}
           {records.length > 0 && (
-            <div className="relative flex items-center justify-end px-1">
+            <div className="relative flex items-center justify-between px-1">
+              <div className="flex gap-1 rounded-md border border-border p-0.5">
+                <button
+                  onClick={() => { setMonthViewMode("list"); setSelectedDay(null) }}
+                  className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold transition-colors ${monthViewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  aria-label={lang === "ko" ? "리스트 보기" : "List view"}
+                >
+                  <List className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+                <button
+                  onClick={() => setMonthViewMode("calendar")}
+                  className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold transition-colors ${monthViewMode === "calendar" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  aria-label={lang === "ko" ? "캘린더 보기" : "Calendar view"}
+                >
+                  <Calendar className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              </div>
               <button
                 onClick={() => setHorizonMenuOpen(o => !o)}
                 className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
@@ -1126,8 +1152,121 @@ export default function App() {
             </div>
           )}
 
-          {/* Saved records for selected month */}
-          {historySummary.enriched.length > 0 ? (
+          {/* Saved records for selected month — list or calendar view */}
+          {monthViewMode === "calendar" && records.length > 0 && (() => {
+            // Build a day→[once-records] map for the viewed month. Recurring items
+            // are listed separately below the grid since they'd otherwise fill
+            // every day and drown out the actual activity signal.
+            const daysInMonth = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate()
+            const firstWeekday = new Date(viewMonth.year, viewMonth.month, 1).getDay()
+            const onceByDay = new Map<number, RecordItem[]>()
+            const recurringThisMonth: RecordItem[] = []
+            records.forEach(r => {
+              const d = new Date(r.date)
+              if (r.type === "recurring") {
+                // Include if it has started on/before the viewed month AND not ended before it.
+                const startAbs = d.getFullYear() * 12 + d.getMonth()
+                const viewAbs = viewMonth.year * 12 + viewMonth.month
+                const endedBefore = typeof r.endYear === "number" && typeof r.endMonth === "number"
+                  && (r.endYear * 12 + r.endMonth) <= viewAbs
+                if (startAbs <= viewAbs && !endedBefore) recurringThisMonth.push(r)
+                return
+              }
+              if (d.getFullYear() !== viewMonth.year || d.getMonth() !== viewMonth.month) return
+              const day = d.getDate()
+              onceByDay.set(day, [...(onceByDay.get(day) ?? []), r])
+            })
+            const weekdayLabels = lang === "ko"
+              ? ["일", "월", "화", "수", "목", "금", "토"]
+              : ["S", "M", "T", "W", "T", "F", "S"]
+            const selectedRecords = selectedDay !== null ? (onceByDay.get(selectedDay) ?? []) : []
+            return (
+              <Card>
+                <CardContent className="p-3 space-y-3">
+                  {/* Weekday header */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {weekdayLabels.map((d, i) => (
+                      <div key={i} className="text-center text-[10px] font-semibold text-muted-foreground">{d}</div>
+                    ))}
+                  </div>
+                  {/* Days grid */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {Array.from({ length: firstWeekday }).map((_, i) => (
+                      <div key={`blank-${i}`} />
+                    ))}
+                    {Array.from({ length: daysInMonth }).map((_, i) => {
+                      const day = i + 1
+                      const dayRecords = onceByDay.get(day) ?? []
+                      const total = dayRecords.reduce((s, r) => s + r.usdAmt, 0)
+                      const hasRecords = dayRecords.length > 0
+                      const isSelected = selectedDay === day
+                      return (
+                        <button
+                          key={day}
+                          onClick={() => setSelectedDay(isSelected ? null : (hasRecords ? day : null))}
+                          disabled={!hasRecords}
+                          className={`aspect-square rounded-md flex flex-col items-center justify-center gap-0.5 p-1 transition-colors ${
+                            isSelected ? `bg-primary text-primary-foreground` :
+                            hasRecords ? `bg-muted hover:bg-muted/80 ${theme.textAccent}` :
+                            "text-muted-foreground/60"
+                          }`}
+                        >
+                          <span className="text-xs font-semibold leading-none">{day}</span>
+                          {hasRecords && (
+                            <span className="text-[9px] font-medium leading-none truncate max-w-full px-0.5">
+                              {fmt(total)}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {/* Selected day details */}
+                  {selectedDay !== null && selectedRecords.length > 0 && (
+                    <div className="border-t border-border pt-2 space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {lang === "ko" ? `${viewMonth.month + 1}월 ${selectedDay}일` : new Date(viewMonth.year, viewMonth.month, selectedDay).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </p>
+                      {selectedRecords.map(r => (
+                        <button
+                          key={r.id}
+                          onClick={() => setEditingRecord(r)}
+                          className="flex w-full items-center justify-between py-1 text-left"
+                        >
+                          <span className="text-sm font-semibold truncate flex-1 min-w-0">{r.name}</span>
+                          <span className="text-xs text-muted-foreground ml-2">{fmtExact(r.usdAmt)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Recurring summary */}
+                  {recurringThisMonth.length > 0 && (
+                    <div className="border-t border-border pt-2 space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {lang === "ko" ? "이 달 반복" : "Recurring this month"}
+                      </p>
+                      {recurringThisMonth.map(r => {
+                        const suffix = r.freq === 365 ? (lang === "ko" ? "/일" : "/day")
+                          : r.freq === 52 ? (lang === "ko" ? "/주" : "/wk")
+                          : (lang === "ko" ? "/월" : "/mo")
+                        return (
+                          <button
+                            key={r.id}
+                            onClick={() => setEditingRecord(r)}
+                            className="flex w-full items-center justify-between py-1 text-left"
+                          >
+                            <span className="text-sm font-semibold truncate flex-1 min-w-0">{r.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">{fmtExact(r.usdAmt)}{suffix}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })()}
+          {monthViewMode === "list" && historySummary.enriched.length > 0 ? (
             <Card className="overflow-hidden">
               {/* Header row */}
               <div className="flex items-center border-b border-border px-4 py-2">
@@ -1205,13 +1344,13 @@ export default function App() {
                 </div>
               </div>
             </Card>
-          ) : records.length > 0 && (
+          ) : monthViewMode === "list" && records.length > 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
                 {lang === "ko" ? "이 달 기록 없음" : "No savings this month"}
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
           {/* Goal card (below the list so records read first; goal reads as the "why").
               The horizon columns mirror the list's horizon checkboxes above — same state. */}
@@ -1507,6 +1646,17 @@ export default function App() {
                     id="edit-amount-input"
                   />
                 </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{lang === "ko" ? "날짜" : "Date"}</Label>
+                  <Input
+                    type="date"
+                    defaultValue={new Date(editingRecord.date).toISOString().slice(0, 10)}
+                    onKeyDown={e => {
+                      if (e.key === "Escape") setEditingRecord(null)
+                    }}
+                    id="edit-date-input"
+                  />
+                </div>
                 {/* Frequency selector: once / daily / weekly / monthly */}
                 <div className="space-y-1">
                   <Label className="text-xs">{lang === "ko" ? "빈도" : "Frequency"}</Label>
@@ -1562,6 +1712,7 @@ export default function App() {
                   <Button className="flex-1" onClick={() => {
                     const nameInput = document.getElementById("edit-name-input") as HTMLInputElement
                     const amtInput = document.getElementById("edit-amount-input") as HTMLInputElement
+                    const dateInput = document.getElementById("edit-date-input") as HTMLInputElement
                     const activeFreq = document.querySelector<HTMLElement>("[data-edit-freq-btn][data-active=true]")
                     const raw = parseFloat(amtInput.value)
                     const usd = currency === "KRW"
@@ -1569,7 +1720,10 @@ export default function App() {
                       : (Number.isFinite(raw) ? raw : undefined)
                     const pickedMode = (activeFreq?.dataset.mode as Mode | undefined) ?? editingRecord.type
                     const pickedFreq = activeFreq?.dataset.freq ? parseInt(activeFreq.dataset.freq, 10) : undefined
-                    updateRecord(editingRecord.id, nameInput.value, usd, pickedMode, pickedFreq)
+                    // Parse the date at noon to sidestep DST / TZ off-by-one issues.
+                    const dateStr = dateInput.value
+                    const dateTs = dateStr ? new Date(`${dateStr}T12:00:00`).getTime() : undefined
+                    updateRecord(editingRecord.id, nameInput.value, usd, pickedMode, pickedFreq, dateTs)
                   }}>
                     {lang === "ko" ? "저장" : "Save"}
                   </Button>
