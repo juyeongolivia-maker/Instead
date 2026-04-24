@@ -1246,9 +1246,6 @@ export default function App() {
             const weekdayLabels = lang === "ko"
               ? ["일", "월", "화", "수", "목", "금", "토"]
               : ["S", "M", "T", "W", "T", "F", "S"]
-            // For recurring weekly/monthly items active on the selected day, scale
-            // the displayed amount to the per-occurrence amount (not monthly avg).
-            const dayAmount = (r: RecordItem) => r.usdAmt
             const selectedRecords = selectedDay !== null ? (recordsByDay.get(selectedDay) ?? []) : []
             return (
               <Card>
