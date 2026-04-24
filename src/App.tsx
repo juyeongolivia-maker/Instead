@@ -1139,7 +1139,6 @@ export default function App() {
                     {lang === "ko" ? `${h}년 후` : `In ${h}Y`}
                   </span>
                 ))}
-                <span className="w-8" />
               </div>
               {/* Scroll the row list inside the card once it exceeds ~6 rows, so the totals
                   stay visible without pushing the goal card off-screen. */}
@@ -1178,13 +1177,6 @@ export default function App() {
                           )}
                         </div>
                       ))}
-                      <button
-                        onClick={() => deleteRecord(item.id)}
-                        className="w-8 flex justify-end pt-0.5 text-muted-foreground hover:text-destructive transition-colors"
-                        aria-label={lang === "ko" ? "삭제" : "Delete"}
-                      >
-                        <X className="h-4 w-4" strokeWidth={1.5} />
-                      </button>
                     </div>
                   )
                 })}
@@ -1203,7 +1195,6 @@ export default function App() {
                   >
                     {lang === "ko" ? "미래" : "Future"}
                   </span>
-                  <span className="w-8" />
                 </div>
                 {/* Amount row */}
                 <div className="mt-1 flex items-center">
@@ -1213,7 +1204,6 @@ export default function App() {
                       {fmt(historySummary.horizonSums[h])}
                     </div>
                   ))}
-                  <span className="w-8" />
                 </div>
               </div>
             </Card>
@@ -1556,6 +1546,18 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (window.confirm(lang === "ko" ? "이 기록을 삭제할까요?" : "Delete this record?")) {
+                        deleteRecord(editingRecord.id)
+                        setEditingRecord(null)
+                      }
+                    }}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    {lang === "ko" ? "삭제" : "Delete"}
+                  </Button>
                   <Button variant="outline" className="flex-1" onClick={() => setEditingRecord(null)}>
                     {lang === "ko" ? "취소" : "Cancel"}
                   </Button>
