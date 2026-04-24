@@ -512,6 +512,46 @@ export default function App() {
   const totalSaved = savingsSummary.totalSaved
   const projectedByDeadline = savingsSummary.projectedByDeadline
 
+  // Monthly savings series from the first record's month through the current month.
+  // Feeds the cumulative chart: bars = that month's saving, area = running total.
+  const monthlySeries = useMemo(() => {
+    if (records.length === 0) return [] as { year: number; month: number; saved: number; cumulative: number }[]
+    let firstAbs = Infinity
+    records.forEach(r => {
+      const d = new Date(r.date)
+      const abs = d.getFullYear() * 12 + d.getMonth()
+      if (abs < firstAbs) firstAbs = abs
+    })
+    const now = new Date()
+    const endAbs = now.getFullYear() * 12 + now.getMonth()
+    if (firstAbs === Infinity || firstAbs > endAbs) return []
+    const out: { year: number; month: number; saved: number; cumulative: number }[] = []
+    let cum = 0
+    for (let abs = firstAbs; abs <= endAbs; abs++) {
+      const y = Math.floor(abs / 12)
+      const m = abs % 12
+      let saved = 0
+      records.forEach(rec => {
+        const d = new Date(rec.date)
+        const sy = d.getFullYear(), sm = d.getMonth()
+        const sabs = sy * 12 + sm
+        if (rec.type !== "recurring") {
+          if (sy === y && sm === m) saved += rec.usdAmt
+          return
+        }
+        if (abs < sabs) return
+        if (rec.endYear !== undefined && rec.endMonth !== undefined) {
+          if (abs >= rec.endYear * 12 + rec.endMonth) return
+        }
+        const freq = rec.freq ?? 12
+        saved += contributionForMonth(rec.usdAmt, freq, rec.date, y, m)
+      })
+      cum += saved
+      out.push({ year: y, month: m, saved, cumulative: cum })
+    }
+    return out
+  }, [records])
+
   function fmt(usd: number) {
     if (currency === "KRW") {
       const won = Math.round(usd * krwRate)
@@ -1401,6 +1441,129 @@ export default function App() {
               </CardContent>
             </Card>
           ) : null}
+
+          {/* Cumulative savings chart — from first record's month through current.
+              Area = running total, faint bars behind = that month's flow, dashed line = goal.
+              Only shown once there's at least 2 months of data to make the trend readable. */}
+          {monthlySeries.length >= 2 && (() => {
+            const W = 400
+            const H = 140
+            const padT = 8
+            const padB = 18
+            const chartH = H - padT - padB
+            const n = monthlySeries.length
+            const maxCum = monthlySeries[n - 1].cumulative
+            const goalTarget = goal?.targetUsd ?? 0
+            const maxY = Math.max(maxCum, goalTarget) * 1.1 || 1
+            const xAt = (i: number) => n === 1 ? W / 2 : (i * W) / (n - 1)
+            const yAt = (v: number) => padT + (1 - v / maxY) * chartH
+            // Smooth cubic path between points (control points at segment midpoints)
+            const pts = monthlySeries.map((p, i) => ({ x: xAt(i), y: yAt(p.cumulative) }))
+            let linePath = `M ${pts[0].x},${pts[0].y}`
+            for (let i = 1; i < pts.length; i++) {
+              const midX = (pts[i - 1].x + pts[i].x) / 2
+              linePath += ` C ${midX},${pts[i - 1].y} ${midX},${pts[i].y} ${pts[i].x},${pts[i].y}`
+            }
+            const areaPath = `${linePath} L ${pts[n - 1].x},${padT + chartH} L ${pts[0].x},${padT + chartH} Z`
+            // Bar geometry: slot = total slice per month; bar occupies 60% of slot, centered
+            const slot = W / n
+            const barW = Math.max(2, slot * 0.6)
+            const maxBar = Math.max(...monthlySeries.map(p => p.saved), 1)
+            const goalY = goalTarget > 0 ? yAt(goalTarget) : null
+            const gradId = `spark-${theme.primaryHsl.replace(/[^a-z0-9]/gi, "")}`
+            const monthLabel = (y: number, m: number) => lang === "ko"
+              ? `${m + 1}월`
+              : new Date(y, m, 1).toLocaleDateString("en-US", { month: "short" })
+            // Sparse x-labels: first, last, plus ~2 in middle if room
+            const labelIdxs = new Set<number>([0, n - 1])
+            if (n >= 4) labelIdxs.add(Math.floor(n / 3))
+            if (n >= 6) labelIdxs.add(Math.floor((2 * n) / 3))
+            return (
+              <Card>
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {lang === "ko" ? "누적 저축" : "Cumulative savings"}
+                    </p>
+                    <span className={`text-lg font-extrabold ${theme.textAccent}`}>{fmt(maxCum)}</span>
+                  </div>
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor={`hsl(${theme.primaryHsl})`} stopOpacity="0.32" />
+                        <stop offset="100%" stopColor={`hsl(${theme.primaryHsl})`} stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    {/* Monthly bars (faint, behind) */}
+                    {monthlySeries.map((p, i) => {
+                      const x = slot * i + (slot - barW) / 2
+                      const h = (p.saved / maxBar) * (chartH * 0.35)
+                      const y = padT + chartH - h
+                      return (
+                        <rect
+                          key={i}
+                          x={x}
+                          y={y}
+                          width={barW}
+                          height={h}
+                          fill="currentColor"
+                          className="text-muted-foreground/20"
+                          rx={1}
+                        />
+                      )
+                    })}
+                    {/* Goal threshold line */}
+                    {goalY !== null && goalY >= padT && (
+                      <>
+                        <line
+                          x1={0} x2={W}
+                          y1={goalY} y2={goalY}
+                          stroke="currentColor"
+                          className="text-muted-foreground/50"
+                          strokeWidth={1}
+                          strokeDasharray="3 3"
+                        />
+                        <text
+                          x={W - 2}
+                          y={goalY - 3}
+                          textAnchor="end"
+                          className="fill-muted-foreground"
+                          fontSize="9"
+                        >
+                          {lang === "ko" ? "목표" : "Goal"}
+                        </text>
+                      </>
+                    )}
+                    {/* Cumulative area + line */}
+                    <path d={areaPath} fill={`url(#${gradId})`} />
+                    <path
+                      d={linePath}
+                      fill="none"
+                      stroke={`hsl(${theme.primaryHsl})`}
+                      strokeWidth={1.75}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    {/* Latest point dot */}
+                    <circle cx={pts[n - 1].x} cy={pts[n - 1].y} r={3} fill={`hsl(${theme.primaryHsl})`} />
+                    {/* X-axis month labels */}
+                    {monthlySeries.map((p, i) => labelIdxs.has(i) ? (
+                      <text
+                        key={`lbl-${i}`}
+                        x={xAt(i)}
+                        y={H - 4}
+                        textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}
+                        className="fill-muted-foreground"
+                        fontSize="9"
+                      >
+                        {monthLabel(p.year, p.month)}
+                      </text>
+                    ) : null)}
+                  </svg>
+                </CardContent>
+              </Card>
+            )
+          })()}
 
           {/* Goal card (below the list so records read first; goal reads as the "why").
               The horizon columns mirror the list's horizon checkboxes above — same state. */}
