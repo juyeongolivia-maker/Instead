@@ -1497,7 +1497,7 @@ export default function App() {
                     same effective width as the rows above — including the reserved
                     scrollbar gutter. Sticky-bottom keeps the month sum visible while the
                     user scrolls through a long list. */}
-                <div className="sticky bottom-0 z-10 border-t-2 border-border bg-muted/40 px-4 py-2.5">
+                <div className="sticky bottom-0 z-10 border-t-2 border-border bg-muted px-4 py-2.5">
                   <div className="flex items-center gap-3">
                     <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {lang === "ko" ? "이 달 합계" : "Month total"}
