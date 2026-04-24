@@ -248,7 +248,9 @@ export default function App() {
     const d = new Date()
     return { year: d.getFullYear(), month: d.getMonth() }
   })
-  const [horizons, setHorizons] = useState<number[]>([10, 20])
+  // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
+  // rendering a single column without a broader refactor.
+  const [horizons, setHorizons] = useState<number[]>([10])
   const [examplesDismissed, setExamplesDismissed] = useState(false)
   const [horizonMenuOpen, setHorizonMenuOpen] = useState(false)
   const [goal, setGoal] = useState<Goal | null>(null)
@@ -320,8 +322,9 @@ export default function App() {
       if (p.frequency) setFrequency(p.frequency)
       if (p.years) setYears(p.years)
       if (Array.isArray(p.records)) setRecords(p.records)
-      if (Array.isArray(p.horizons) && p.horizons.every((n: unknown) => typeof n === "number")) {
-        setHorizons(p.horizons)
+      if (Array.isArray(p.horizons) && p.horizons.every((n: unknown) => typeof n === "number") && p.horizons.length > 0) {
+        // Migrate legacy multi-select saves down to a single horizon.
+        setHorizons([p.horizons[0] as number])
       }
       if (typeof p.examplesDismissed === "boolean") setExamplesDismissed(p.examplesDismissed)
       if (p.goal && typeof p.goal === "object" && typeof p.goal.targetUsd === "number") {
@@ -894,25 +897,18 @@ export default function App() {
 
           <Separator />
 
-          {/* Time horizons shown in list */}
+          {/* Time horizon shown in list (single-select) */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {lang === "ko" ? "리스트 기간 표시" : "Horizons shown in list"}
+              {lang === "ko" ? "리스트 기간 표시" : "Horizon shown in list"}
             </Label>
             <div className="flex gap-2">
               {[10, 20, 30].map(h => {
-                const active = horizons.includes(h)
+                const active = horizons[0] === h
                 return (
                   <button
                     key={h}
-                    onClick={() => {
-                      if (active) {
-                        // prevent empty selection
-                        if (horizons.length > 1) setHorizons(horizons.filter(x => x !== h))
-                      } else {
-                        setHorizons([...horizons, h].sort((a, b) => a - b))
-                      }
-                    }}
+                    onClick={() => setHorizons([h])}
                     className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
                   >
                     {lang === "ko" ? `${h}년` : `${h}Y`}
@@ -921,7 +917,7 @@ export default function App() {
               })}
             </div>
             <p className="text-xs text-muted-foreground">
-              {lang === "ko" ? "최소 하나는 선택되어야 해요." : "At least one must be selected."}
+              {lang === "ko" ? "한 번에 하나만 표시돼요." : "One at a time."}
             </p>
           </div>
 
@@ -1105,20 +1101,15 @@ export default function App() {
                   />
                   <div className="absolute right-1 top-full z-20 mt-1 flex min-w-[140px] flex-col rounded-md border border-border bg-background py-1 shadow-lg">
                     {[10, 20, 30].map(h => {
-                      const active = horizons.includes(h)
-                      const isLast = horizons.length === 1 && active
+                      const active = horizons[0] === h
                       return (
                         <button
                           key={h}
-                          disabled={isLast}
                           onClick={() => {
-                            if (active) {
-                              if (horizons.length > 1) setHorizons(horizons.filter(x => x !== h))
-                            } else {
-                              setHorizons([...horizons, h].sort((a, b) => a - b))
-                            }
+                            setHorizons([h])
+                            setHorizonMenuOpen(false)
                           }}
-                          className="flex items-center justify-between px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60 disabled:hover:bg-transparent"
+                          className="flex items-center justify-between px-3 py-1.5 text-sm hover:bg-muted"
                         >
                           <span>{lang === "ko" ? `${h}년 후` : `In ${h}Y`}</span>
                           {active && <Check className="h-3.5 w-3.5" strokeWidth={1.5} />}
