@@ -1450,16 +1450,18 @@ export default function App() {
                             }`} />
                             <span className="text-sm font-semibold truncate">{item.name}</span>
                           </span>
+                          {/* Line 1 shows the normalized monthly figure so every recurring row is
+                              comparable at a glance. Whatever unit the user actually entered moves
+                              into parens on line 2 — same pattern as the future-value column. */}
                           <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {fmtExact(item.usdAmt)}{freqSuffix}
+                            {showMonthlyEq
+                              ? `${fmtExact(item.monthAmt)}${moSuffix}`
+                              : `${fmtExact(item.usdAmt)}${freqSuffix}`}
                           </span>
                         </div>
-                        {/* Line 2 (recurring only, and only if the input unit isn't already monthly):
-                            monthly equivalent, right-aligned under the unit amount. Same text-xs
-                            as line 1 so /day and /mo share weight rather than a size hierarchy. */}
                         {showMonthlyEq && (
                           <div className="flex justify-end text-xs text-muted-foreground leading-4">
-                            {fmtExact(item.monthAmt)}{moSuffix}
+                            ({fmtExact(item.usdAmt)}{freqSuffix})
                           </div>
                         )}
                       </button>
