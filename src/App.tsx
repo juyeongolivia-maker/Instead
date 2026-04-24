@@ -1057,6 +1057,7 @@ export default function App() {
             const committedPct = Math.min(100, (committed / goal.targetUsd) * 100)
             const isAchieved = !!goal.achievedAt
             const GoalIcon = goalIcons[goal.iconKey] ?? Target
+            const goalRate = parseFloat(rate) || 10
             // Deadline-based stats
             let daysLeft: number | null = null
             let saveableMonths = 0
@@ -1080,24 +1081,31 @@ export default function App() {
               <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
                 <button className="w-full text-left" onClick={() => setGoalEditorOpen(true)}>
                   <CardContent className="p-4 space-y-2">
-                    {isAchieved ? (
+                    {isAchieved && (
                       <div className="flex items-center gap-2">
                         <Trophy className={`h-5 w-5 ${theme.textAccent}`} strokeWidth={1.5} />
                         <span className="font-bold text-sm">
                           {lang === "ko" ? `${goal.name} 달성!` : `${goal.name} achieved!`}
                         </span>
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <GoalIcon className={`h-5 w-5 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
-                          <span className="font-bold text-sm truncate">{goal.name}</span>
-                        </div>
-                        <span className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                          {fmt(committed)} / {fmt(goal.targetUsd)}
-                        </span>
-                      </div>
                     )}
+                    {/* Main row: name + target amount on left, "if invested instead" horizons on right */}
+                    <div className="flex items-start">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
+                          <span className="font-semibold truncate">{goal.name}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {fmtExact(goal.targetUsd)}
+                        </div>
+                      </div>
+                      {horizons.map(h => (
+                        <div key={h} className={`w-14 text-right text-xs font-medium ${theme.textAccent}`}>
+                          {fmt(fvLump(goal.targetUsd, goalRate, h))}
+                        </div>
+                      ))}
+                    </div>
                     {/* Progress bar: solid = committed (actual + recurring commitments to deadline) */}
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                       <div
@@ -1108,7 +1116,7 @@ export default function App() {
                     {/* Meta line */}
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>
-                        {committedPct.toFixed(1)}%
+                        {fmt(committed)} / {fmt(goal.targetUsd)} · {committedPct.toFixed(1)}%
                         {goal.deadline && futureCommitment > 0 && (
                           <span className="ml-1 text-muted-foreground/70">
                             {lang === "ko"
