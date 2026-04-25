@@ -27,6 +27,8 @@ type RecordItem = {
   // Omitted = still active from start month onward.
   endYear?: number
   endMonth?: number // 0-11
+  // Whether money was actually transferred for this record. Only transferred records count toward the month total.
+  transferred?: boolean
 }
 
 type GoalIconKey = "plane" | "home" | "car" | "grad" | "heart" | "piggy" | "target"
@@ -472,6 +474,7 @@ export default function App() {
       return true
     })
     let monthSaved = 0
+    let monthPlanned = 0
     const horizonSums: Record<number, number> = {}
     horizons.forEach(h => { horizonSums[h] = 0 })
     // Sort: by frequency rank primary (monthly→weekly→daily→once, so the heavier
@@ -510,10 +513,11 @@ export default function App() {
         // once → one-time lump FV. Matches the single value now shown per row.
         horizonSums[h] += isRecurring ? fvRecurringByHorizon[h] : fvByHorizon[h]
       })
-      monthSaved += monthAmt
+      monthPlanned += monthAmt
+      if (item.transferred ?? true) monthSaved += monthAmt
       return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt }
     })
-    return { enriched, monthSaved, horizonSums }
+    return { enriched, monthSaved, monthPlanned, horizonSums }
   }, [records, rate, viewMonth, horizons])
 
   // Two totals for goal progress:
@@ -541,9 +545,10 @@ export default function App() {
         const isRecurring = item.type === "recurring"
         const freq = item.freq ?? (isRecurring ? 12 : 1)
         if (!isRecurring) {
-          if (startAbs <= throughAbsInclusive) total += item.usdAmt
+          if (startAbs <= throughAbsInclusive && (item.transferred ?? true)) total += item.usdAmt
           return
         }
+        if (!(item.transferred ?? true)) return
         const endAbsExclusive = (item.endYear !== undefined && item.endMonth !== undefined)
           ? item.endYear * 12 + item.endMonth
           : throughAbsInclusive + 1
@@ -585,6 +590,7 @@ export default function App() {
       const freq = item.freq ?? (isRecurring ? 12 : 1)
       let actual = 0
       let committed = 0
+      if (!(item.transferred ?? true)) return { record: item, actual: 0, committed: 0, total: 0 }
       if (!isRecurring) {
         if (startAbs <= currentAbs) actual = item.usdAmt
         else if (startAbs <= horizonAbs) committed = item.usdAmt
@@ -643,13 +649,14 @@ export default function App() {
         const sy = d.getFullYear(), sm = d.getMonth()
         const sabs = sy * 12 + sm
         if (rec.type !== "recurring") {
-          if (sy === y && sm === m) saved += rec.usdAmt
+          if (sy === y && sm === m && (rec.transferred ?? true)) saved += rec.usdAmt
           return
         }
         if (abs < sabs) return
         if (rec.endYear !== undefined && rec.endMonth !== undefined) {
           if (abs >= rec.endYear * 12 + rec.endMonth) return
         }
+        if (!(rec.transferred ?? true)) return
         const freq = rec.freq ?? 12
         saved += contributionForMonth(rec.usdAmt, freq, rec.date, y, m)
       })
@@ -699,12 +706,17 @@ export default function App() {
       date: ts,
       type: mode,
       freq: mode === "recurring" ? (parseFloat(frequency) || 12) : 1,
+      transferred: false,
     }, ...prev])
     setSaveFlash(true)
     setTimeout(() => {
       setSaveFlash(false)
       setView("list")
     }, 800)
+  }
+
+  function toggleTransferred(id: string) {
+    setRecords(prev => prev.map(r => r.id !== id ? r : { ...r, transferred: !(r.transferred ?? true) }))
   }
 
   function deleteRecord(id: string) {
@@ -1461,6 +1473,7 @@ export default function App() {
                 {/* Three-column grid: name | now (entered + monthly eq) | in-horizon FV.
                     Same gap + widths used in every row below so columns line up cleanly. */}
                 <div className="sticky top-0 z-10 flex items-center border-b border-border bg-background px-4 py-2 gap-3">
+                  <div className="w-4 flex-shrink-0" />
                   <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
                   <span className="w-20 text-right text-xs font-semibold text-muted-foreground">{lang === "ko" ? "현재" : "Now"}</span>
                   {horizons.map(h => (
@@ -1478,8 +1491,16 @@ export default function App() {
                   const moSuffix = lang === "ko" ? "/월" : "/m"
                   // Show monthly equivalent only when the entered unit isn't already monthly
                   const showMonthlyEq = item.isRecurring && item.freq !== 12
+                  const isTransferred = item.transferred ?? true
                   return (
-                    <div key={item.id} className={`flex items-start px-4 py-2.5 gap-3 ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
+                    <div key={item.id} className={`flex items-start px-4 py-2.5 gap-3 transition-opacity ${!isTransferred ? "opacity-45" : ""} ${index < historySummary.enriched.length - 1 ? "border-b border-border" : ""}`}>
+                      <button
+                        className={`mt-0.5 h-4 w-4 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${isTransferred ? "bg-primary border-primary text-primary-foreground" : "border-border bg-transparent"}`}
+                        onClick={() => toggleTransferred(item.id)}
+                        aria-label={isTransferred ? (lang === "ko" ? "이체 취소" : "Mark not transferred") : (lang === "ko" ? "이체 완료" : "Mark as transferred")}
+                      >
+                        {isTransferred && <Check className="h-2.5 w-2.5" />}
+                      </button>
                       <button
                         className="flex-1 min-w-0 text-left p-0 bg-transparent border-0 m-0"
                         onClick={() => setEditingRecord(item)}
@@ -1534,12 +1555,18 @@ export default function App() {
                     user scrolls through a long list. */}
                 <div className="sticky bottom-0 z-10 border-t-2 border-border bg-muted px-4 py-2.5">
                   <div className="flex items-center gap-3">
+                    <div className="w-4 flex-shrink-0" />
                     <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {lang === "ko" ? "이 달 합계" : "Month total"}
                     </span>
-                    <span className="w-20 text-right text-base font-extrabold">
-                      {fmt(historySummary.monthSaved)}
-                    </span>
+                    <div className="w-20 text-right">
+                      <div className="text-base font-extrabold leading-5">{fmt(historySummary.monthSaved)}</div>
+                      {historySummary.monthSaved < historySummary.monthPlanned && (
+                        <div className="text-[10px] text-muted-foreground leading-4 whitespace-nowrap">
+                          {lang === "ko" ? `계획 ${fmt(historySummary.monthPlanned)}` : `plan ${fmt(historySummary.monthPlanned)}`}
+                        </div>
+                      )}
+                    </div>
                     {horizons.map(h => (
                       <div key={h} className={`w-14 text-right text-sm font-bold ${theme.textAccent}`}>
                         {fmt(historySummary.horizonSums[h])}
