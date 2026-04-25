@@ -27,6 +27,20 @@ type RecordItem = {
   // Omitted = still active from start month onward.
   endYear?: number
   endMonth?: number // 0-11
+  // "I actually moved this money" tracking. Once items use a single bool;
+  // recurring items track per-month with "YYYY-MM" keys (each month is a
+  // separate transfer to verify).
+  verified?: boolean
+  verifiedMonths?: string[]
+}
+
+function monthKey(year: number, month: number) {
+  return `${year}-${String(month + 1).padStart(2, "0")}`
+}
+
+function isVerifiedFor(r: RecordItem, viewYear: number, viewMonth: number): boolean {
+  if (r.type !== "recurring") return !!r.verified
+  return (r.verifiedMonths ?? []).includes(monthKey(viewYear, viewMonth))
 }
 
 type GoalIconKey = "plane" | "home" | "car" | "grad" | "heart" | "piggy" | "target"
@@ -472,8 +486,10 @@ export default function App() {
       return true
     })
     let monthSaved = 0
+    let monthSavedVerified = 0
     const horizonSums: Record<number, number> = {}
-    horizons.forEach(h => { horizonSums[h] = 0 })
+    const horizonSumsVerified: Record<number, number> = {}
+    horizons.forEach(h => { horizonSums[h] = 0; horizonSumsVerified[h] = 0 })
     // Sort: by frequency rank primary (monthly→weekly→daily→once, so the heavier
     // monthly amounts lead for visual balance), then amount desc within each group
     // so bigger items float to the top. Date desc only as a final tiebreaker.
@@ -500,6 +516,7 @@ export default function App() {
         : item.usdAmt
       const fvByHorizon: Record<number, number> = {}
       const fvRecurringByHorizon: Record<number, number> = {}
+      const verified = isVerifiedFor(item, viewMonth.year, viewMonth.month)
       horizons.forEach(h => {
         fvByHorizon[h] = fvLump(monthAmt, r, h)
         if (isRecurring) {
@@ -508,12 +525,15 @@ export default function App() {
         }
         // Totals sum the "headline" number of each row: recurring → full stream FV,
         // once → one-time lump FV. Matches the single value now shown per row.
-        horizonSums[h] += isRecurring ? fvRecurringByHorizon[h] : fvByHorizon[h]
+        const headline = isRecurring ? fvRecurringByHorizon[h] : fvByHorizon[h]
+        horizonSums[h] += headline
+        if (verified) horizonSumsVerified[h] += headline
       })
       monthSaved += monthAmt
-      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt }
+      if (verified) monthSavedVerified += monthAmt
+      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt, verified }
     })
-    return { enriched, monthSaved, horizonSums }
+    return { enriched, monthSaved, monthSavedVerified, horizonSums, horizonSumsVerified }
   }, [records, rate, viewMonth, horizons])
 
   // Two totals for goal progress:
@@ -705,6 +725,19 @@ export default function App() {
       setSaveFlash(false)
       setView("list")
     }, 800)
+  }
+
+  function toggleRecordVerified(id: string) {
+    setRecords(prev => prev.map(r => {
+      if (r.id !== id) return r
+      if (r.type !== "recurring") {
+        return { ...r, verified: !r.verified }
+      }
+      const key = monthKey(viewMonth.year, viewMonth.month)
+      const current = r.verifiedMonths ?? []
+      const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key]
+      return { ...r, verifiedMonths: next }
+    }))
   }
 
   function deleteRecord(id: string) {
@@ -1462,6 +1495,7 @@ export default function App() {
                     Same gap + widths used in every row below so columns line up cleanly. */}
                 <div className="sticky top-0 z-10 flex items-center border-b border-border bg-background px-4 py-2 gap-3">
                   <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
+                  <span className="w-5 text-center text-xs font-semibold text-muted-foreground" aria-label={lang === "ko" ? "이체" : "Moved"}>✓</span>
                   <span className="w-20 text-right text-xs font-semibold text-muted-foreground">{lang === "ko" ? "현재" : "Now"}</span>
                   {horizons.map(h => (
                     <span key={h} className="w-14 text-right text-xs font-semibold text-muted-foreground">
@@ -1495,6 +1529,23 @@ export default function App() {
                           }`} />
                           <span className="text-sm font-semibold truncate">{item.name}</span>
                         </div>
+                      </button>
+                      {/* Verified toggle — tap to mark "I actually moved this money".
+                          Recurring tracks per-month, so the same row will reset to
+                          unverified when the user navigates to a different month. */}
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); toggleRecordVerified(item.id) }}
+                        className="w-5 flex items-center justify-center pt-1"
+                        aria-label={item.verified ? (lang === "ko" ? "이체 취소" : "Unmark moved") : (lang === "ko" ? "이체 표시" : "Mark moved")}
+                      >
+                        {item.verified ? (
+                          <span className="h-4 w-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                          </span>
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 hover:border-muted-foreground/60 transition-colors" />
+                        )}
                       </button>
                       {/* Now column: monthly (or entered if already monthly/once) on line 1,
                           entered unit in parens on line 2 for daily/weekly recurring.
@@ -1532,17 +1583,34 @@ export default function App() {
                     same effective width as the rows above — including the reserved
                     scrollbar gutter. Sticky-bottom keeps the month sum visible while the
                     user scrolls through a long list. */}
+                {/* Totals show two layers per cell: verified (bold dark) + pending (muted).
+                    Verified = items the user actually moved money for. Pending = the rest.
+                    Both add up to the all-records total. */}
                 <div className="sticky bottom-0 z-10 border-t-2 border-border bg-muted px-4 py-2.5">
-                  <div className="flex items-center gap-3">
-                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div className="flex items-start gap-3">
+                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground self-center">
                       {lang === "ko" ? "이 달 합계" : "Month total"}
                     </span>
-                    <span className="w-20 text-right text-base font-extrabold">
-                      {fmt(historySummary.monthSaved)}
-                    </span>
+                    <div className="w-20 text-right">
+                      <div className="text-base font-extrabold leading-5">
+                        {fmt(historySummary.monthSavedVerified)}
+                      </div>
+                      {historySummary.monthSaved > historySummary.monthSavedVerified && (
+                        <div className="text-[10px] text-muted-foreground leading-4">
+                          +{fmt(historySummary.monthSaved - historySummary.monthSavedVerified)}
+                        </div>
+                      )}
+                    </div>
                     {horizons.map(h => (
-                      <div key={h} className={`w-14 text-right text-sm font-bold ${theme.textAccent}`}>
-                        {fmt(historySummary.horizonSums[h])}
+                      <div key={h} className="w-14 text-right">
+                        <div className={`text-sm font-bold leading-5 ${theme.textAccent}`}>
+                          {fmt(historySummary.horizonSumsVerified[h])}
+                        </div>
+                        {historySummary.horizonSums[h] > historySummary.horizonSumsVerified[h] && (
+                          <div className="text-[10px] text-muted-foreground leading-4">
+                            +{fmt(historySummary.horizonSums[h] - historySummary.horizonSumsVerified[h])}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2118,6 +2186,59 @@ export default function App() {
                     })}
                   </div>
                 </div>
+                {/* Verified toggle — same data the list-row check writes to.
+                    Recurring items track per-month, so the explanation reminds
+                    the user this only marks the currently-viewed month. */}
+                {(() => {
+                  const isRec = editingRecord.type === "recurring"
+                  const verifiedNow = isVerifiedFor(editingRecord, viewMonth.year, viewMonth.month)
+                  const monthLabel = lang === "ko"
+                    ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
+                    : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+                  return (
+                    <div className="space-y-2 rounded-lg border border-border p-3">
+                      <Label className="text-xs">
+                        {lang === "ko" ? "이체 확인" : "Money moved"}
+                        {isRec && <span className="text-muted-foreground"> · {monthLabel}</span>}
+                      </Label>
+                      <button
+                        type="button"
+                        onClick={() => toggleRecordVerified(editingRecord.id)}
+                        className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                          verifiedNow
+                            ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
+                            : "border-border hover:bg-muted"
+                        }`}
+                      >
+                        {verifiedNow ? (
+                          <span className="h-4 w-4 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                          </span>
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/40 flex-shrink-0" />
+                        )}
+                        <span className="font-medium">
+                          {verifiedNow
+                            ? (isRec
+                              ? (lang === "ko" ? "이번 달 옮겼어요" : "Moved this month")
+                              : (lang === "ko" ? "이 돈 옮겼어요" : "Moved this money"))
+                            : (isRec
+                              ? (lang === "ko" ? "이번 달 아직 안 옮겼어요" : "Not moved yet this month")
+                              : (lang === "ko" ? "아직 안 옮겼어요" : "Not moved yet"))}
+                        </span>
+                      </button>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        {isRec
+                          ? (lang === "ko"
+                            ? "반복 항목은 매달 따로 체크해요. 다른 달로 넘어가면 다시 표시해야 합니다."
+                            : "Recurring items are checked monthly — each month is its own confirmation.")
+                          : (lang === "ko"
+                            ? "체크된 항목만 합계의 진한 숫자에 포함됩니다."
+                            : "Only checked items count toward the bold totals.")}
+                      </p>
+                    </div>
+                  )
+                })()}
                 <div className="flex gap-2 pt-3">
                   <Button
                     variant="outline"
