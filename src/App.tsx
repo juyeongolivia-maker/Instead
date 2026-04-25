@@ -1932,6 +1932,10 @@ export default function App() {
                       if (e.key === "Escape") setEditingRecord(null)
                     }}
                     id="edit-date-input"
+                    // iOS Safari draws extra chrome inside <input type="date"> that pushes
+                    // the rendered text past the box. appearance:none disables that native
+                    // styling so the input respects the modal's content width.
+                    className="appearance-none min-w-0"
                   />
                 </div>
                 {/* Frequency selector: once / daily / weekly / monthly */}
