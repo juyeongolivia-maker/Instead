@@ -268,6 +268,10 @@ export default function App() {
   // otherwise the modal is in "add new" mode.
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<CustomPreset | null>(null)
+  // Goal detail modal — read-only progress + per-record contribution breakdown.
+  // Edit happens via a button inside this detail modal so a casual tap on the
+  // goal card no longer drops users into a write-mode form.
+  const [goalDetailOpen, setGoalDetailOpen] = useState(false)
   // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
   // rendering a single column without a broader refactor.
   const [horizons, setHorizons] = useState<number[]>([10])
@@ -559,6 +563,49 @@ export default function App() {
   }, [records, goal])
   const totalSaved = savingsSummary.totalSaved
   const projectedByDeadline = savingsSummary.projectedByDeadline
+
+  // Per-record contribution to the current goal. Mirrors sumThrough's logic but
+  // tallies per item so the goal-detail modal can list which records contribute
+  // most. Splits actual (already-saved) from committed (still-to-come this period).
+  const goalContributions = useMemo(() => {
+    if (!goal) return [] as { record: RecordItem; actual: number; committed: number; total: number }[]
+    const now = new Date()
+    const currentAbs = now.getFullYear() * 12 + now.getMonth()
+    let lastMonthAbs = currentAbs
+    if (goal.deadline) {
+      const dl = new Date(goal.deadline)
+      const dlMonthAbs = dl.getFullYear() * 12 + dl.getMonth()
+      lastMonthAbs = dl.getDate() === 1 ? dlMonthAbs - 1 : dlMonthAbs
+    }
+    const horizonAbs = Math.max(currentAbs, lastMonthAbs)
+    const out = records.map(item => {
+      const d = new Date(item.date)
+      const startAbs = d.getFullYear() * 12 + d.getMonth()
+      const isRecurring = item.type === "recurring"
+      const freq = item.freq ?? (isRecurring ? 12 : 1)
+      let actual = 0
+      let committed = 0
+      if (!isRecurring) {
+        if (startAbs <= currentAbs) actual = item.usdAmt
+        else if (startAbs <= horizonAbs) committed = item.usdAmt
+      } else {
+        const endAbsExclusive = (item.endYear !== undefined && item.endMonth !== undefined)
+          ? item.endYear * 12 + item.endMonth
+          : horizonAbs + 1
+        const cap = Math.min(endAbsExclusive, horizonAbs + 1)
+        for (let abs = startAbs; abs < cap; abs++) {
+          const y = Math.floor(abs / 12)
+          const m = abs % 12
+          const c = contributionForMonth(item.usdAmt, freq, item.date, y, m)
+          if (abs <= currentAbs) actual += c
+          else committed += c
+        }
+      }
+      return { record: item, actual, committed, total: actual + committed }
+    }).filter(r => r.total > 0)
+    out.sort((a, b) => b.total - a.total)
+    return out
+  }, [records, goal])
 
   // Monthly savings series from the first record's month through the current month.
   // Feeds the cumulative chart: bars = that month's saving, area = running total.
@@ -1659,7 +1706,7 @@ export default function App() {
             const futureCommitment = Math.max(0, committed - totalSaved)
             return (
               <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
-                <button className="w-full text-left" onClick={() => setGoalEditorOpen(true)}>
+                <button className="w-full text-left" onClick={() => setGoalDetailOpen(true)}>
                   <CardContent className="p-4 space-y-2">
                     {isAchieved && (
                       <div className="flex items-center gap-2">
@@ -1751,6 +1798,125 @@ export default function App() {
               </button>
             </Card>
           )}
+
+          {/* Goal detail modal — read-only progress + per-record contribution list.
+              Edit goes through the Edit button so a casual tap can't accidentally
+              start mutating fields. */}
+          {goalDetailOpen && goal && (() => {
+            const committed = projectedByDeadline
+            const committedPct = Math.min(100, (committed / goal.targetUsd) * 100)
+            const isAchieved = !!goal.achievedAt
+            const GoalIcon = goalIcons[goal.iconKey] ?? Target
+            let daysLeft: number | null = null
+            let onTrack = false
+            if (goal.deadline) {
+              const msPerDay = 1000 * 60 * 60 * 24
+              daysLeft = Math.max(0, Math.ceil((goal.deadline - Date.now()) / msPerDay))
+              onTrack = committed >= goal.targetUsd
+            }
+            const futureCommitment = Math.max(0, committed - totalSaved)
+            return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setGoalDetailOpen(false)}>
+                <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Header: name + status pill */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <GoalIcon className={`h-5 w-5 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
+                      <span className="font-bold text-base truncate">{goal.name}</span>
+                    </div>
+                    {isAchieved ? (
+                      <span className={`text-xs font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 🎉" : "Achieved 🎉"}</span>
+                    ) : goal.deadline && daysLeft !== null ? (
+                      <span className={`text-xs font-semibold ${onTrack ? theme.textAccent : "text-muted-foreground"}`}>
+                        {onTrack ? (lang === "ko" ? "순조롭게 ✓" : "On track ✓") : (lang === "ko" ? "더 분발해야" : "Behind")}
+                      </span>
+                    ) : null}
+                  </div>
+                  {/* Big progress display */}
+                  <div className="space-y-2">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-2xl font-extrabold">{fmt(committed)}</span>
+                      <span className="text-sm text-muted-foreground">/ {fmt(goal.targetUsd)}</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${committedPct}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{committedPct.toFixed(0)}%</span>
+                      {goal.deadline && daysLeft !== null && (
+                        <span>{lang === "ko" ? `${daysLeft}일 남음` : `${daysLeft}d left`}</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Saved vs committed split */}
+                  {goal.deadline && futureCommitment > 0 && (
+                    <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/50 p-3">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "지금까지" : "Saved"}</p>
+                        <p className="text-sm font-bold mt-0.5">{fmt(totalSaved)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "예정 (반복)" : "Committed"}</p>
+                        <p className="text-sm font-bold mt-0.5">{fmt(futureCommitment)}</p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Contribution list */}
+                  {goalContributions.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {lang === "ko" ? "기여 항목" : "Contributing items"}
+                      </p>
+                      <div className="space-y-1">
+                        {goalContributions.map(({ record: r, total, actual }) => {
+                          const isRecurring = r.type === "recurring"
+                          const suffix = isRecurring
+                            ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
+                              : r.freq === 52 ? (lang === "ko" ? "/주" : "/w")
+                              : (lang === "ko" ? "/월" : "/m"))
+                            : ""
+                          const dotColor = !isRecurring ? "bg-amber-400"
+                            : r.freq === 365 ? "bg-emerald-400"
+                            : r.freq === 52 ? "bg-sky-400"
+                            : "bg-violet-400"
+                          const pct = (total / goal.targetUsd) * 100
+                          return (
+                            <div key={r.id} className="flex items-center justify-between gap-2 py-1">
+                              <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+                                <span className="text-sm font-semibold truncate">{r.name}</span>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
+                              </span>
+                              <span className="text-right whitespace-nowrap">
+                                <span className={`text-sm font-medium ${theme.textAccent}`}>{fmt(total)}</span>
+                                <span className="text-[10px] text-muted-foreground ml-1">
+                                  {pct.toFixed(0)}%{actual > 0 && total > actual && "*"}
+                                </span>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {goalContributions.some(c => c.actual > 0 && c.total > c.actual) && (
+                        <p className="text-[10px] text-muted-foreground/70 mt-1">
+                          {lang === "ko" ? "* 일부는 아직 예정 (recurring 미래분)" : "* Some still committed (future recurring)"}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setGoalDetailOpen(false)}>
+                      {lang === "ko" ? "닫기" : "Close"}
+                    </Button>
+                    <Button className="flex-1" onClick={() => { setGoalDetailOpen(false); setGoalEditorOpen(true) }}>
+                      {lang === "ko" ? "편집" : "Edit"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Goal editor modal */}
           {goalEditorOpen && (
