@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, Trophy, LogIn, LogOut, Calendar, List, Tag, Pencil } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, LogIn, LogOut, Calendar, List, Tag, Pencil } from "lucide-react"
 import { useAuth } from "@/lib/useAuth"
 import { useCloudSync } from "@/lib/useCloudSync"
 import type { LucideIcon } from "lucide-react"
@@ -603,7 +603,19 @@ export default function App() {
       }
       return { record: item, actual, committed, total: actual + committed }
     }).filter(r => r.total > 0)
-    out.sort((a, b) => b.total - a.total)
+    // Match the main list's grouping: monthly → weekly → daily → once,
+    // then by contribution amount desc within each group.
+    const freqRank = (r: RecordItem) => {
+      if (r.type !== "recurring") return 3
+      if (r.freq === 12) return 0
+      if (r.freq === 52) return 1
+      return 2
+    }
+    out.sort((a, b) => {
+      const fd = freqRank(a.record) - freqRank(b.record)
+      if (fd !== 0) return fd
+      return b.total - a.total
+    })
     return out
   }, [records, goal])
 
@@ -664,14 +676,6 @@ export default function App() {
     return `$${Math.round(usd).toLocaleString("en-US")}`
   }
 
-  function fmtExact(usd: number) {
-    if (currency === "KRW") {
-      return `₩${Math.round(usd * krwRate).toLocaleString("ko-KR")}`
-    }
-    // Round to 1 decimal and drop trailing .0 so $56 stays "$56" not "$56.0".
-    const rounded = Math.round(usd * 10) / 10
-    return `$${rounded}`
-  }
 
   function handleCurrencyChange(next: Currency) {
     if (next === currency) return
@@ -1703,72 +1707,46 @@ export default function App() {
               onTrack = committed >= goal.targetUsd
             }
             const extraMonthlyNeeded = goal.deadline ? shortfall / saveableMonths : 0
-            const futureCommitment = Math.max(0, committed - totalSaved)
             return (
               <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
                 <button className="w-full text-left" onClick={() => setGoalDetailOpen(true)}>
                   <CardContent className="p-4 space-y-2">
-                    {isAchieved && (
-                      <div className="flex items-center gap-2">
-                        <Trophy className={`h-5 w-5 ${theme.textAccent}`} strokeWidth={1.5} />
-                        <span className="font-bold text-sm">
-                          {lang === "ko" ? `${goal.name} 달성!` : `${goal.name} achieved!`}
-                        </span>
-                      </div>
-                    )}
-                    {/* Main row: name + target amount on left, "if invested instead" horizons on right.
-                        Sizes match the records list so columns line up visually. */}
-                    <div className="flex items-start">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 leading-5">
-                          <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
-                          <span className="text-sm font-semibold truncate">{goal.name}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground leading-4">
-                          {fmtExact(goal.targetUsd)}
-                        </div>
+                    {/* Top row: name + 30Y projection of the target. Target itself
+                        moves into the meta line below to drop one row. */}
+                    <div className="flex items-center">
+                      <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
+                        <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
+                        <span className="text-sm font-semibold truncate">{goal.name}</span>
                       </div>
                       {horizons.map(h => (
-                        <div key={h} className={`w-14 text-right text-sm font-medium leading-5 ${theme.textAccent}`}>
+                        <div key={h} className={`w-14 text-right text-xs font-medium leading-5 ${theme.textAccent}`}>
                           {fmt(fvLump(goal.targetUsd, goalRate, h))}
                         </div>
                       ))}
                     </div>
-                    {/* Progress bar: solid = committed (actual + recurring commitments to deadline) */}
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-full rounded-full bg-primary transition-all"
                         style={{ width: `${committedPct}%` }}
                       />
                     </div>
-                    {/* Meta line */}
+                    {/* Compact meta — current/target on the left, status on the right.
+                        100% number, saved/committed split, and the "on track" word are
+                        all in the detail modal — no need to repeat them here. */}
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {fmt(committed)} / {fmt(goal.targetUsd)} · {committedPct.toFixed(1)}%
-                        {goal.deadline && futureCommitment > 0 && (
-                          <span className="ml-1 text-muted-foreground/70">
-                            {lang === "ko"
-                              ? `(실제 ${fmt(totalSaved)} + 예정 ${fmt(futureCommitment)})`
-                              : `(saved ${fmt(totalSaved)} + committed ${fmt(futureCommitment)})`}
-                          </span>
-                        )}
-                      </span>
-                      {!isAchieved && goal.deadline && daysLeft !== null ? (
+                      <span>{fmt(committed)} / {fmt(goal.targetUsd)}</span>
+                      {isAchieved ? (
+                        <span className={`font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
+                      ) : goal.deadline && daysLeft !== null ? (
                         onTrack ? (
-                          <span className={theme.textAccent}>
-                            {lang === "ko" ? `${daysLeft}일 · 이대로면 달성 ✓` : `${daysLeft}d · on track ✓`}
+                          <span className={`font-semibold ${theme.textAccent}`}>
+                            {lang === "ko" ? `${daysLeft}일 ✓` : `${daysLeft}d ✓`}
                           </span>
                         ) : (
                           <span>
-                            {lang === "ko"
-                              ? `${daysLeft}일 · 월 +${fmt(extraMonthlyNeeded)} 더 필요`
-                              : `${daysLeft}d · +${fmt(extraMonthlyNeeded)}/mo needed`}
+                            {lang === "ko" ? `${daysLeft}일 · +${fmt(extraMonthlyNeeded)}/월` : `${daysLeft}d · +${fmt(extraMonthlyNeeded)}/m`}
                           </span>
                         )
-                      ) : isAchieved ? (
-                        <span className={theme.textAccent}>
-                          {lang === "ko" ? "축하해요 🎉" : "Congrats 🎉"}
-                        </span>
                       ) : null}
                     </div>
                   </CardContent>
