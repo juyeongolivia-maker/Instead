@@ -2463,43 +2463,119 @@ export default function App() {
                             ? (lang === "ko" ? "어느 주부터 멈출까요?" : "Stop from which week?")
                             : (lang === "ko" ? "어느 달부터 멈출까요?" : "Stop from which month?")}
                       </p>
-                      {/* Daily: also show a free date picker for full flexibility */}
-                      {r.freq === 365 && (
-                        <Input
-                          type="date"
-                          id="delete-date-input"
-                          defaultValue={new Date().toISOString().slice(0, 10)}
-                          className="appearance-none min-w-0"
-                        />
+                      {/* Weekly: mini calendar grid — only weekly occurrences are tappable.
+                          Mirrors the main calendar's visual language (sky dot per occurrence)
+                          so the user can see at a glance "month has 4 weeks; I want to stop
+                          after the 3rd one". Other days are dimmed and unclickable. */}
+                      {r.freq === 52 && (() => {
+                        const startTs = r.date
+                        const startDate = new Date(startTs)
+                        const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+                        const monthFirst = new Date(viewMonth.year, viewMonth.month, 1)
+                        const monthLast = new Date(viewMonth.year, viewMonth.month + 1, 0)
+                        const daysInMonth = monthLast.getDate()
+                        const firstWeekday = monthFirst.getDay()
+                        const startWeekday = startDate.getDay()
+                        const occurrences = new Set<number>()
+                        let occ = new Date(monthFirst)
+                        occ.setDate(occ.getDate() + ((startWeekday - occ.getDay() + 7) % 7))
+                        while (occ <= monthLast) {
+                          if (occ >= startDay) occurrences.add(occ.getDate())
+                          occ = new Date(occ); occ.setDate(occ.getDate() + 7)
+                        }
+                        const nextMonthFirstOcc = new Date(occ)
+                        const weekdayLabels = lang === "ko"
+                          ? ["일", "월", "화", "수", "목", "금", "토"]
+                          : ["S", "M", "T", "W", "T", "F", "S"]
+                        return (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-7 gap-1">
+                              {weekdayLabels.map((d, i) => (
+                                <div key={i} className="text-center text-[10px] font-semibold text-muted-foreground">{d}</div>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-7 gap-1">
+                              {Array.from({ length: firstWeekday }).map((_, i) => (
+                                <div key={`blank-${i}`} />
+                              ))}
+                              {Array.from({ length: daysInMonth }).map((_, i) => {
+                                const day = i + 1
+                                const isOcc = occurrences.has(day)
+                                if (!isOcc) {
+                                  return (
+                                    <div key={day} className="aspect-square flex items-center justify-center">
+                                      <span className="text-xs text-muted-foreground/40">{day}</span>
+                                    </div>
+                                  )
+                                }
+                                const occTs = new Date(viewMonth.year, viewMonth.month, day).getTime()
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => { endRecordAt(r.id, occTs); closeModal() }}
+                                    className="aspect-square rounded-md flex flex-col items-center justify-center gap-0.5 bg-sky-100 dark:bg-sky-900/30 hover:bg-sky-200 dark:hover:bg-sky-900/50 transition-colors"
+                                    aria-label={lang === "ko" ? `${viewMonth.month + 1}월 ${day}일부터 멈춤` : `Stop from ${viewMonth.month + 1}/${day}`}
+                                  >
+                                    <span className="text-xs font-semibold leading-none">{day}</span>
+                                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { endRecordAt(r.id, nextMonthFirstOcc.getTime()); closeModal() }}
+                              className="w-full rounded-md border border-border px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+                            >
+                              {lang === "ko"
+                                ? `다음 달 ${nextMonthFirstOcc.getMonth() + 1}월 ${nextMonthFirstOcc.getDate()}일부터 멈춤`
+                                : `Stop from next month (${nextMonthFirstOcc.toLocaleDateString("en-US", { month: "short", day: "numeric" })})`}
+                            </button>
+                          </div>
+                        )
+                      })()}
+                      {/* Daily: free date picker. Monthly: simple "this/next month" buttons. */}
+                      {r.freq !== 52 && (
+                        <>
+                          {r.freq === 365 && (
+                            <Input
+                              type="date"
+                              id="delete-date-input"
+                              defaultValue={new Date().toISOString().slice(0, 10)}
+                              className="appearance-none min-w-0"
+                            />
+                          )}
+                          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+                            {choices.map(c => (
+                              <button
+                                key={c.ts}
+                                type="button"
+                                onClick={() => { endRecordAt(r.id, c.ts); closeModal() }}
+                                className="rounded-md border border-border px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+                              >
+                                {c.label}
+                              </button>
+                            ))}
+                            {r.freq === 365 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const input = document.getElementById("delete-date-input") as HTMLInputElement
+                                  const v = input?.value
+                                  if (!v) return
+                                  const ts = new Date(`${v}T00:00:00`).getTime()
+                                  endRecordAt(r.id, ts)
+                                  closeModal()
+                                }}
+                                className="rounded-md border border-primary bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold hover:opacity-90 transition-opacity"
+                              >
+                                {lang === "ko" ? "선택한 날짜부터 멈춤" : "Stop from picked date"}
+                              </button>
+                            )}
+                          </div>
+                        </>
                       )}
-                      <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-                        {choices.map(c => (
-                          <button
-                            key={c.ts}
-                            type="button"
-                            onClick={() => { endRecordAt(r.id, c.ts); closeModal() }}
-                            className="rounded-md border border-border px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
-                          >
-                            {c.label}
-                          </button>
-                        ))}
-                        {r.freq === 365 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const input = document.getElementById("delete-date-input") as HTMLInputElement
-                              const v = input?.value
-                              if (!v) return
-                              const ts = new Date(`${v}T00:00:00`).getTime()
-                              endRecordAt(r.id, ts)
-                              closeModal()
-                            }}
-                            className="rounded-md border border-primary bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold hover:opacity-90 transition-opacity"
-                          >
-                            {lang === "ko" ? "선택한 날짜부터 멈춤" : "Stop from picked date"}
-                          </button>
-                        )}
-                      </div>
                     </div>
                   )}
                   <div className="flex flex-col gap-2 pt-2">
