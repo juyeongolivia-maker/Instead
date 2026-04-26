@@ -25,13 +25,27 @@ type RecordItem = {
   freq?: number // 1 (once) | 12 (monthly) | 52 (weekly) | 365 (daily). Legacy records: undefined → treated as 12 for recurring.
   // Recurring-only: first month this record no longer applies (exclusive).
   // Omitted = still active from start month onward.
+  // endDate (timestamp, day-precision) supersedes endYear/endMonth for new records.
+  // The month-level fields stay for legacy data — getEndDate() reconciles both.
   endYear?: number
   endMonth?: number // 0-11
+  endDate?: number
   // "I actually moved this money" tracking. Once items use a single bool;
   // recurring items track per-month with "YYYY-MM" keys (each month is a
   // separate transfer to verify).
   verified?: boolean
   verifiedMonths?: string[]
+}
+
+// Effective end timestamp for a recurring record. Prefers the precise endDate;
+// falls back to start-of-(endYear, endMonth) for older records that only
+// captured month-level granularity. Returns undefined if the record never ends.
+function getEndDate(r: RecordItem): number | undefined {
+  if (typeof r.endDate === "number") return r.endDate
+  if (typeof r.endYear === "number" && typeof r.endMonth === "number") {
+    return new Date(r.endYear, r.endMonth, 1).getTime()
+  }
+  return undefined
 }
 
 function monthKey(year: number, month: number) {
@@ -231,16 +245,33 @@ function fvLump(p: number, r: number, y: number) {
 // - weekly  (freq=52): usdAmt × (activeDays / 7)
 // - daily   (freq=365): usdAmt × activeDays
 // activeDays = (in start month) daysInMonth - startDay + 1, else full daysInMonth
-function contributionForMonth(usdAmt: number, freq: number, startTs: number, year: number, month: number) {
-  if (freq === 12) return usdAmt
+function contributionForMonth(usdAmt: number, freq: number, startTs: number, year: number, month: number, endTs?: number) {
+  // Monthly: atomic per month — active iff the month's first day is before endTs.
+  if (freq === 12) {
+    if (endTs !== undefined && new Date(year, month, 1).getTime() >= endTs) return 0
+    return usdAmt
+  }
   const startDate = new Date(startTs)
   const sy = startDate.getFullYear()
   const sm = startDate.getMonth()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const isStartMonth = sy === year && sm === month
-  const activeDays = isStartMonth
+  let activeDays = isStartMonth
     ? Math.max(0, daysInMonth - startDate.getDate() + 1)
     : daysInMonth
+  // If endTs falls inside this month, only count days strictly before endTs.
+  if (endTs !== undefined) {
+    const endDate = new Date(endTs)
+    const ey = endDate.getFullYear()
+    const em = endDate.getMonth()
+    if (ey * 12 + em < year * 12 + month) {
+      activeDays = 0
+    } else if (ey === year && em === month) {
+      const firstActive = isStartMonth ? startDate.getDate() : 1
+      const lastActive = endDate.getDate() - 1 // exclusive of endDate itself
+      activeDays = Math.max(0, lastActive - firstActive + 1)
+    }
+  }
   if (freq === 52) return usdAmt * (activeDays / 7)
   if (freq === 365) return usdAmt * activeDays
   return usdAmt * (freq / 12) // defensive fallback
@@ -286,6 +317,10 @@ export default function App() {
   // Edit happens via a button inside this detail modal so a casual tap on the
   // goal card no longer drops users into a write-mode form.
   const [goalDetailOpen, setGoalDetailOpen] = useState(false)
+  // Delete-confirmation modal — for recurring records the user picks the cutoff
+  // date so weekly/daily records stop at the right occurrence, not just the
+  // start of a month.
+  const [deletingRecord, setDeletingRecord] = useState<RecordItem | null>(null)
   // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
   // rendering a single column without a broader refactor.
   const [horizons, setHorizons] = useState<number[]>([10])
@@ -479,9 +514,11 @@ export default function App() {
       }
       // Before start?
       if (cmpYM(viewMonth.year, viewMonth.month, sy, sm) < 0) return false
-      // At/after end?
-      if (item.endYear !== undefined && item.endMonth !== undefined) {
-        if (cmpYM(viewMonth.year, viewMonth.month, item.endYear, item.endMonth) >= 0) return false
+      // At/after end? Include the month if any active day still falls before endDate.
+      const endTs = getEndDate(item)
+      if (endTs !== undefined) {
+        const monthFirstTs = new Date(viewMonth.year, viewMonth.month, 1).getTime()
+        if (monthFirstTs >= endTs) return false
       }
       return true
     })
@@ -512,7 +549,7 @@ export default function App() {
       // Calendar-based monthly amount with start-date proration for daily/weekly.
       // e.g. $25/wk registered Apr 18 → April counts Apr 18–30 (13 days), May onward counts full month.
       const monthAmt = isRecurring
-        ? contributionForMonth(item.usdAmt, freq, item.date, viewMonth.year, viewMonth.month)
+        ? contributionForMonth(item.usdAmt, freq, item.date, viewMonth.year, viewMonth.month, getEndDate(item))
         : item.usdAmt
       const fvByHorizon: Record<number, number> = {}
       const fvRecurringByHorizon: Record<number, number> = {}
@@ -564,15 +601,21 @@ export default function App() {
           if (startAbs <= throughAbsInclusive) total += item.usdAmt
           return
         }
-        const endAbsExclusive = (item.endYear !== undefined && item.endMonth !== undefined)
-          ? item.endYear * 12 + item.endMonth
+        const endTs = getEndDate(item)
+        // Months whose first day is before endTs are still candidates for contribution.
+        // contributionForMonth itself prorates the partial end month.
+        const endAbsExclusive = endTs !== undefined
+          ? (() => {
+            const e = new Date(endTs)
+            const eAbs = e.getFullYear() * 12 + e.getMonth()
+            return e.getDate() === 1 ? eAbs : eAbs + 1
+          })()
           : throughAbsInclusive + 1
         const cap = Math.min(endAbsExclusive, throughAbsInclusive + 1)
-        // Sum calendar-based contribution for each active month (prorates start month)
         for (let abs = startAbs; abs < cap; abs++) {
           const y = Math.floor(abs / 12)
           const m = abs % 12
-          total += contributionForMonth(item.usdAmt, freq, item.date, y, m)
+          total += contributionForMonth(item.usdAmt, freq, item.date, y, m, endTs)
         }
       })
       return total
@@ -609,14 +652,19 @@ export default function App() {
         if (startAbs <= currentAbs) actual = item.usdAmt
         else if (startAbs <= horizonAbs) committed = item.usdAmt
       } else {
-        const endAbsExclusive = (item.endYear !== undefined && item.endMonth !== undefined)
-          ? item.endYear * 12 + item.endMonth
+        const endTs = getEndDate(item)
+        const endAbsExclusive = endTs !== undefined
+          ? (() => {
+            const e = new Date(endTs)
+            const eAbs = e.getFullYear() * 12 + e.getMonth()
+            return e.getDate() === 1 ? eAbs : eAbs + 1
+          })()
           : horizonAbs + 1
         const cap = Math.min(endAbsExclusive, horizonAbs + 1)
         for (let abs = startAbs; abs < cap; abs++) {
           const y = Math.floor(abs / 12)
           const m = abs % 12
-          const c = contributionForMonth(item.usdAmt, freq, item.date, y, m)
+          const c = contributionForMonth(item.usdAmt, freq, item.date, y, m, endTs)
           if (abs <= currentAbs) actual += c
           else committed += c
         }
@@ -667,11 +715,10 @@ export default function App() {
           return
         }
         if (abs < sabs) return
-        if (rec.endYear !== undefined && rec.endMonth !== undefined) {
-          if (abs >= rec.endYear * 12 + rec.endMonth) return
-        }
+        const endTs = getEndDate(rec)
+        if (endTs !== undefined && new Date(y, m, 1).getTime() >= endTs) return
         const freq = rec.freq ?? 12
-        saved += contributionForMonth(rec.usdAmt, freq, rec.date, y, m)
+        saved += contributionForMonth(rec.usdAmt, freq, rec.date, y, m, endTs)
       })
       cum += saved
       out.push({ year: y, month: m, saved, cumulative: cum })
@@ -740,18 +787,19 @@ export default function App() {
     }))
   }
 
-  function deleteRecord(id: string) {
-    setRecords(prev => prev.flatMap(r => {
-      if (r.id !== id) return [r]
-      // Once: always remove entirely
-      if (r.type !== "recurring") return []
-      // Recurring: if viewing at-or-before the start month, remove entirely.
-      // Otherwise set end = viewMonth so the recurring stops from viewMonth onward.
-      const d = new Date(r.date)
-      const startCmp = (viewMonth.year - d.getFullYear()) || (viewMonth.month - d.getMonth())
-      if (startCmp <= 0) return []
-      return [{ ...r, endYear: viewMonth.year, endMonth: viewMonth.month }]
-    }))
+  // Stop a recurring record from a chosen day onward. Past contributions remain
+  // counted; the day itself and everything after are excluded. Wipes the legacy
+  // month-level fields so they don't fight with the new endDate.
+  function endRecordAt(id: string, endTs: number) {
+    setRecords(prev => prev.map(r =>
+      r.id === id ? { ...r, endDate: endTs, endYear: undefined, endMonth: undefined } : r
+    ))
+  }
+
+  // Remove the record entirely — past contributions disappear too. Used for
+  // "I made this by mistake" cases or for once-type records.
+  function removeRecordCompletely(id: string) {
+    setRecords(prev => prev.filter(r => r.id !== id))
   }
 
   function updateRecord(id: string, name: string, usdAmt?: number, mode?: Mode, freq?: number, date?: number) {
@@ -1329,7 +1377,6 @@ export default function App() {
             // daily rhythm of savings — not just one-off entries.
             const daysInMonth = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate()
             const firstWeekday = new Date(viewMonth.year, viewMonth.month, 1).getDay()
-            const viewAbs = viewMonth.year * 12 + viewMonth.month
             const recordsByDay = new Map<number, RecordItem[]>()
             const msPerDay = 86400000
             for (let day = 1; day <= daysInMonth; day++) {
@@ -1340,10 +1387,9 @@ export default function App() {
                 const start = new Date(r.date)
                 const startDayTs = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()
                 if (startDayTs > dayTs) continue
-                if (typeof r.endYear === "number" && typeof r.endMonth === "number") {
-                  const endAbs = r.endYear * 12 + r.endMonth
-                  if (viewAbs >= endAbs) continue
-                }
+                const endTs = getEndDate(r)
+                // Day-precision: skip if dayDate is on/after endDate (record stopped that day).
+                if (endTs !== undefined && dayTs >= endTs) continue
                 if (r.type === "once") {
                   if (start.getFullYear() === viewMonth.year
                     && start.getMonth() === viewMonth.month
@@ -2243,10 +2289,11 @@ export default function App() {
                   <Button
                     variant="outline"
                     onClick={() => {
-                      if (window.confirm(lang === "ko" ? "이 기록을 삭제할까요?" : "Delete this record?")) {
-                        deleteRecord(editingRecord.id)
-                        setEditingRecord(null)
-                      }
+                      // Open the delete-with-when modal instead of confirming
+                      // here so recurring records can stop at a specific day.
+                      const record = editingRecord
+                      setEditingRecord(null)
+                      setDeletingRecord(record)
                     }}
                     className="text-destructive hover:text-destructive"
                   >
@@ -2279,6 +2326,137 @@ export default function App() {
           )}
 
           {/* Category editor modal (add new or edit/delete existing custom preset) */}
+          {/* Delete-with-when modal — for recurring records the user picks the
+              cutoff (which weekly occurrence, which day, which month) so weekly
+              and daily recurrence stop precisely. Once items get a simple confirm. */}
+          {deletingRecord && (() => {
+            const r = deletingRecord
+            const isRecurring = r.type === "recurring"
+            const closeModal = () => setDeletingRecord(null)
+            // Build the freq-specific list of cutoff dates the user can pick.
+            // "Stop from {date}" means contributions on/after that date go away.
+            type Choice = { ts: number; label: string }
+            const choices: Choice[] = []
+            if (isRecurring) {
+              const startTs = r.date
+              const startDate = new Date(startTs)
+              const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+              const monthFirst = new Date(viewMonth.year, viewMonth.month, 1)
+              const monthLast = new Date(viewMonth.year, viewMonth.month + 1, 0)
+              const fmtDate = (d: Date) => lang === "ko"
+                ? `${d.getMonth() + 1}월 ${d.getDate()}일부터`
+                : `From ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+              if (r.freq === 12) {
+                // Monthly: offer this month's start and next month's start.
+                const thisMonthStart = monthFirst
+                const nextMonthStart = new Date(viewMonth.year, viewMonth.month + 1, 1)
+                if (thisMonthStart >= startDay) choices.push({ ts: thisMonthStart.getTime(), label: lang === "ko" ? `${viewMonth.month + 1}월부터 멈춤` : `Stop from ${thisMonthStart.toLocaleDateString("en-US", { month: "long" })}` })
+                choices.push({ ts: nextMonthStart.getTime(), label: lang === "ko" ? `${viewMonth.month + 2 > 12 ? 1 : viewMonth.month + 2}월부터 멈춤` : `Stop from ${nextMonthStart.toLocaleDateString("en-US", { month: "long" })}` })
+              } else if (r.freq === 52) {
+                // Weekly: list each weekly occurrence inside the viewed month
+                // (and the first one in the next month so the user can pick "after the last week").
+                const startWeekday = startDate.getDay()
+                // Find first weekly occurrence on/after monthFirst that matches start weekday
+                let occ = new Date(monthFirst)
+                const daysToAdd = (startWeekday - occ.getDay() + 7) % 7
+                occ.setDate(occ.getDate() + daysToAdd)
+                while (occ <= monthLast) {
+                  if (occ >= startDay) choices.push({ ts: occ.getTime(), label: fmtDate(occ) })
+                  occ = new Date(occ); occ.setDate(occ.getDate() + 7)
+                }
+                // Add one more = first occurrence in the next month (lets user say "stop after last week of this month")
+                if (occ >= startDay) choices.push({ ts: occ.getTime(), label: fmtDate(occ) })
+              } else if (r.freq === 365) {
+                // Daily: too many to list — show a date input. Default = today (or first
+                // day of viewMonth if today is in a different month).
+                // Quick presets: today, tomorrow, first of next month.
+                const now = new Date()
+                const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                const tomorrow = new Date(todayMidnight); tomorrow.setDate(tomorrow.getDate() + 1)
+                const nextMonthStart = new Date(viewMonth.year, viewMonth.month + 1, 1)
+                if (todayMidnight >= startDay) choices.push({ ts: todayMidnight.getTime(), label: lang === "ko" ? "오늘부터 멈춤" : "Stop from today" })
+                if (tomorrow >= startDay) choices.push({ ts: tomorrow.getTime(), label: lang === "ko" ? "내일부터 멈춤" : "Stop from tomorrow" })
+                if (nextMonthStart >= startDay) choices.push({ ts: nextMonthStart.getTime(), label: lang === "ko" ? `${viewMonth.month + 2 > 12 ? 1 : viewMonth.month + 2}월부터 멈춤` : `Stop from ${nextMonthStart.toLocaleDateString("en-US", { month: "long" })}` })
+              }
+            }
+            return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={closeModal}>
+                <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
+                  <div>
+                    <p className="font-semibold">
+                      {lang === "ko" ? "삭제" : "Delete"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 truncate">{r.name}</p>
+                  </div>
+                  {!isRecurring ? (
+                    <p className="text-sm text-muted-foreground">
+                      {lang === "ko" ? "이 기록을 완전히 삭제할까요?" : "Delete this record completely?"}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        {r.freq === 365
+                          ? (lang === "ko" ? "어느 날 이후로 멈출까요?" : "Stop from which day?")
+                          : r.freq === 52
+                            ? (lang === "ko" ? "어느 주부터 멈출까요?" : "Stop from which week?")
+                            : (lang === "ko" ? "어느 달부터 멈출까요?" : "Stop from which month?")}
+                      </p>
+                      {/* Daily: also show a free date picker for full flexibility */}
+                      {r.freq === 365 && (
+                        <Input
+                          type="date"
+                          id="delete-date-input"
+                          defaultValue={new Date().toISOString().slice(0, 10)}
+                          className="appearance-none min-w-0"
+                        />
+                      )}
+                      <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+                        {choices.map(c => (
+                          <button
+                            key={c.ts}
+                            type="button"
+                            onClick={() => { endRecordAt(r.id, c.ts); closeModal() }}
+                            className="rounded-md border border-border px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                        {r.freq === 365 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const input = document.getElementById("delete-date-input") as HTMLInputElement
+                              const v = input?.value
+                              if (!v) return
+                              const ts = new Date(`${v}T00:00:00`).getTime()
+                              endRecordAt(r.id, ts)
+                              closeModal()
+                            }}
+                            className="rounded-md border border-primary bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold hover:opacity-90 transition-opacity"
+                          >
+                            {lang === "ko" ? "선택한 날짜부터 멈춤" : "Stop from picked date"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { removeRecordCompletely(r.id); closeModal() }}
+                      className="text-xs text-destructive hover:underline text-center"
+                    >
+                      {lang === "ko" ? "전체 기록 완전히 삭제" : "Remove completely (including past)"}
+                    </button>
+                    <Button variant="outline" onClick={closeModal}>
+                      {lang === "ko" ? "취소" : "Cancel"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {categoryEditorOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setCategoryEditorOpen(false)}>
               <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
