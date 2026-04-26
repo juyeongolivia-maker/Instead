@@ -796,6 +796,14 @@ export default function App() {
     ))
   }
 
+  // Resume a stopped recurring record — clears endDate so contributions count
+  // again from now on (and retroactively over the stopped gap).
+  function resumeRecord(id: string) {
+    setRecords(prev => prev.map(r =>
+      r.id === id ? { ...r, endDate: undefined, endYear: undefined, endMonth: undefined } : r
+    ))
+  }
+
   // Remove the record entirely — past contributions disappear too. Used for
   // "I made this by mistake" cases or for once-type records.
   function removeRecordCompletely(id: string) {
@@ -2232,6 +2240,60 @@ export default function App() {
                     })}
                   </div>
                 </div>
+                {/* Status section — only shown when the record has been stopped at
+                    some date. Lets the user resume (clear endDate) or pick a new
+                    cutoff (re-open the delete-with-when modal). Hidden for
+                    fully-active records to keep the form quiet. */}
+                {(() => {
+                  const endTs = getEndDate(editingRecord)
+                  if (endTs === undefined) return null
+                  const endD = new Date(endTs)
+                  const endLabel = lang === "ko"
+                    ? `${endD.getMonth() + 1}월 ${endD.getDate()}일`
+                    : endD.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  return (
+                    <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 p-3">
+                      <Label className="text-xs">
+                        {lang === "ko" ? "상태" : "Status"}
+                      </Label>
+                      <p className="text-sm">
+                        {lang === "ko" ? `${endLabel}부터 멈춤` : `Stopped from ${endLabel}`}
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs"
+                          onClick={() => {
+                            const msg = lang === "ko"
+                              ? `재개하면 멈췄던 기간(${endLabel}~)도 다시 활성화돼요. 진행할까요?`
+                              : `Resuming will reactivate the stopped period (${endLabel} to now). Continue?`
+                            if (window.confirm(msg)) {
+                              resumeRecord(editingRecord.id)
+                              setEditingRecord(null)
+                            }
+                          }}
+                        >
+                          {lang === "ko" ? "재개" : "Resume"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs"
+                          onClick={() => {
+                            // Hand off to the delete-with-when modal so the user
+                            // can pick a different cutoff date.
+                            const record = editingRecord
+                            setEditingRecord(null)
+                            setDeletingRecord(record)
+                          }}
+                        >
+                          {lang === "ko" ? "끝 날짜 변경" : "Change cutoff"}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })()}
                 {/* Verified toggle — same data the list-row check writes to.
                     Recurring items track per-month, so the explanation reminds
                     the user this only marks the currently-viewed month. */}
