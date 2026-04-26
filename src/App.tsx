@@ -2535,46 +2535,88 @@ export default function App() {
                           </div>
                         )
                       })()}
-                      {/* Daily: free date picker. Monthly: simple "this/next month" buttons. */}
-                      {r.freq !== 52 && (
-                        <>
-                          {r.freq === 365 && (
-                            <Input
-                              type="date"
-                              id="delete-date-input"
-                              defaultValue={new Date().toISOString().slice(0, 10)}
-                              className="appearance-none min-w-0"
-                            />
-                          )}
-                          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-                            {choices.map(c => (
-                              <button
-                                key={c.ts}
-                                type="button"
-                                onClick={() => { endRecordAt(r.id, c.ts); closeModal() }}
-                                className="rounded-md border border-border px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
-                              >
-                                {c.label}
-                              </button>
-                            ))}
-                            {r.freq === 365 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const input = document.getElementById("delete-date-input") as HTMLInputElement
-                                  const v = input?.value
-                                  if (!v) return
-                                  const ts = new Date(`${v}T00:00:00`).getTime()
-                                  endRecordAt(r.id, ts)
-                                  closeModal()
-                                }}
-                                className="rounded-md border border-primary bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold hover:opacity-90 transition-opacity"
-                              >
-                                {lang === "ko" ? "선택한 날짜부터 멈춤" : "Stop from picked date"}
-                              </button>
-                            )}
+                      {/* Daily: same mini-calendar approach as weekly, but every day from
+                          the start date onward is tappable (emerald to match the daily dot
+                          in the legend). Today gets a ring so the "stop from today" action
+                          is one tap away. */}
+                      {r.freq === 365 && (() => {
+                        const startTs = r.date
+                        const startDate = new Date(startTs)
+                        const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+                        const monthFirst = new Date(viewMonth.year, viewMonth.month, 1)
+                        const monthLast = new Date(viewMonth.year, viewMonth.month + 1, 0)
+                        const daysInMonth = monthLast.getDate()
+                        const firstWeekday = monthFirst.getDay()
+                        const today = new Date()
+                        const isCurrentMonth = today.getFullYear() === viewMonth.year && today.getMonth() === viewMonth.month
+                        const todayDay = isCurrentMonth ? today.getDate() : -1
+                        const nextMonthFirst = new Date(viewMonth.year, viewMonth.month + 1, 1)
+                        const weekdayLabels = lang === "ko"
+                          ? ["일", "월", "화", "수", "목", "금", "토"]
+                          : ["S", "M", "T", "W", "T", "F", "S"]
+                        return (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-7 gap-1">
+                              {weekdayLabels.map((d, i) => (
+                                <div key={i} className="text-center text-[10px] font-semibold text-muted-foreground">{d}</div>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-7 gap-1">
+                              {Array.from({ length: firstWeekday }).map((_, i) => (
+                                <div key={`blank-${i}`} />
+                              ))}
+                              {Array.from({ length: daysInMonth }).map((_, i) => {
+                                const day = i + 1
+                                const dayMid = new Date(viewMonth.year, viewMonth.month, day)
+                                if (dayMid.getTime() < startDay.getTime()) {
+                                  return (
+                                    <div key={day} className="aspect-square flex items-center justify-center">
+                                      <span className="text-xs text-muted-foreground/40">{day}</span>
+                                    </div>
+                                  )
+                                }
+                                const occTs = dayMid.getTime()
+                                const isToday = day === todayDay
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => { endRecordAt(r.id, occTs); closeModal() }}
+                                    className={`aspect-square rounded-md flex flex-col items-center justify-center gap-0.5 bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors ${isToday ? "ring-2 ring-emerald-500" : ""}`}
+                                    aria-label={lang === "ko" ? `${viewMonth.month + 1}월 ${day}일부터 멈춤` : `Stop from ${viewMonth.month + 1}/${day}`}
+                                  >
+                                    <span className="text-xs font-semibold leading-none">{day}</span>
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { endRecordAt(r.id, nextMonthFirst.getTime()); closeModal() }}
+                              className="w-full rounded-md border border-border px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+                            >
+                              {lang === "ko"
+                                ? `다음 달 ${nextMonthFirst.getMonth() + 1}월 1일부터 멈춤`
+                                : `Stop from next month (${nextMonthFirst.toLocaleDateString("en-US", { month: "short" })})`}
+                            </button>
                           </div>
-                        </>
+                        )
+                      })()}
+                      {/* Monthly: just the two "this month / next month" buttons. */}
+                      {r.freq === 12 && (
+                        <div className="flex flex-col gap-1.5">
+                          {choices.map(c => (
+                            <button
+                              key={c.ts}
+                              type="button"
+                              onClick={() => { endRecordAt(r.id, c.ts); closeModal() }}
+                              className="rounded-md border border-border px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+                            >
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}
