@@ -1938,6 +1938,9 @@ export default function App() {
                       <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
                         <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
                         <span className="text-sm font-semibold truncate">{goal.name}</span>
+                        <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">
+                          {lang === "ko" ? "단기" : "Short-term"}
+                        </span>
                       </div>
                       {horizons.map(h => (
                         <div key={h} className={`w-14 text-right text-xs font-medium leading-5 ${theme.textAccent}`}>
@@ -1971,9 +1974,7 @@ export default function App() {
                             {lang === "ko" ? `${daysLeft}일 · +${fmt(extraMonthlyNeeded)}/월` : `${daysLeft}d · +${fmt(extraMonthlyNeeded)}/m`}
                           </span>
                         )
-                      ) : (
-                        <span>{lang === "ko" ? "단기" : "Short-term"}</span>
-                      )}
+                      ) : null}
                     </div>
                   </CardContent>
                 </button>
