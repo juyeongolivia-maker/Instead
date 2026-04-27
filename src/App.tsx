@@ -99,6 +99,9 @@ type Goal = {
   // Phase 1: added for future shared-goal support. All existing goals default to "personal".
   // Phase 2 will introduce memberIds/inviteToken + Firestore shared collection.
   type?: GoalType
+  // Optional free-text account label (e.g. "Toss · ●●2345"). For user reference
+  // only — never store full account numbers; UI nudges users to use a partial.
+  account?: string
 }
 
 type CustomPreset = {
@@ -343,6 +346,11 @@ export default function App() {
   // a short-term goal exists, so they can pick whether the money went to the
   // goal or to long-term savings.
   const [verifyingRecord, setVerifyingRecord] = useState<RecordItem | null>(null)
+  // Free-text label for the long-term savings account (e.g. "Wealthfront · ●●1234").
+  // Stored alongside other app state in the save blob so it syncs across devices.
+  const [longTermAccount, setLongTermAccount] = useState<string>("")
+  // Whether the long-term account editor modal is open.
+  const [longTermAccountEditorOpen, setLongTermAccountEditorOpen] = useState(false)
   // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
   // rendering a single column without a broader refactor.
   const [horizons, setHorizons] = useState<number[]>([10])
@@ -437,6 +445,7 @@ export default function App() {
           }))
         setCustomPresets(valid)
       }
+      if (typeof p.longTermAccount === "string") setLongTermAccount(p.longTermAccount)
       if (typeof p.examplesDismissed === "boolean") setExamplesDismissed(p.examplesDismissed)
       if (p.goal && typeof p.goal === "object" && typeof p.goal.targetUsd === "number") {
         // Validate iconKey, default to target if unknown
@@ -461,10 +470,10 @@ export default function App() {
     if (auth.configured && !auth.user) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
-      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets,
+      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets, longTermAccount,
       krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt,
     }))
-  }, [hydrated, auth.configured, auth.user, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
+  }, [hydrated, auth.configured, auth.user, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets, longTermAccount, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
 
   // When Firebase is configured and user is signed out, ensure localStorage stays clean so that
   // the next sign-in pulls fresh data from Firestore instead of pushing stale local state up.
@@ -934,7 +943,7 @@ export default function App() {
     reader.readAsText(file)
   }
 
-  function saveGoal(input: { name: string; iconKey: GoalIconKey; targetUsd: number; deadline?: number; type: GoalType }) {
+  function saveGoal(input: { name: string; iconKey: GoalIconKey; targetUsd: number; deadline?: number; type: GoalType; account?: string }) {
     setGoal(prev => {
       if (prev) {
         return { ...prev, ...input, achievedAt: undefined }
@@ -1943,10 +1952,13 @@ export default function App() {
                       />
                     </div>
                     {/* Compact meta — current/target on the left, status on the right.
-                        100% number, saved/committed split, and the "on track" word are
-                        all in the detail modal — no need to repeat them here. */}
+                        Status pill collapses to "Short-term" when no deadline / not achieved
+                        so the card always carries the bucket label. */}
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{fmt(committed)} / {fmt(goal.targetUsd)}</span>
+                      <span>
+                        {fmt(committed)} / {fmt(goal.targetUsd)}
+                        {goal.account && <span className="ml-1.5">· {goal.account}</span>}
+                      </span>
                       {isAchieved ? (
                         <span className={`font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
                       ) : goal.deadline && daysLeft !== null ? (
@@ -1959,7 +1971,9 @@ export default function App() {
                             {lang === "ko" ? `${daysLeft}일 · +${fmt(extraMonthlyNeeded)}/월` : `${daysLeft}d · +${fmt(extraMonthlyNeeded)}/m`}
                           </span>
                         )
-                      ) : null}
+                      ) : (
+                        <span>{lang === "ko" ? "단기" : "Short-term"}</span>
+                      )}
                     </div>
                   </CardContent>
                 </button>
@@ -1989,26 +2003,34 @@ export default function App() {
             </Card>
           )}
 
-          {/* Long-term savings card — actual balance the user has confirmed moving
-              into long-term (vs the short-term goal). Always visible so the bucket
-              is discoverable from day one, even before any transfers exist. */}
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
-                <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm">
-                  {lang === "ko" ? "장기 저축" : "Long-term"}
+          {/* Long-term savings card — laid out to mirror the goal card above:
+              icon + name on the left, headline number on the right, account
+              label on the second line if set. Tapping opens the small editor
+              for the account label. */}
+          <Card className="overflow-hidden">
+            <button className="w-full text-left" onClick={() => setLongTermAccountEditorOpen(true)}>
+              <CardContent className="p-4 space-y-2">
+                <div className="flex items-center">
+                  <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
+                    <PiggyBank className="h-4 w-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
+                    <span className="text-sm font-semibold truncate">
+                      {lang === "ko" ? "장기 저축" : "Long-term"}
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                    {fmt(verifiedBalances.longBalance)}
+                  </span>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {lang === "ko" ? "이체 확인된 금액" : "Verified balance"}
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {longTermAccount
+                      ? longTermAccount
+                      : (lang === "ko" ? "계좌 추가하기" : "Add account")}
+                  </span>
+                  <span>{lang === "ko" ? "이체 확인된 금액" : "Verified"}</span>
                 </div>
-              </div>
-              <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                {fmt(verifiedBalances.longBalance)}
-              </span>
-            </CardContent>
+              </CardContent>
+            </button>
           </Card>
 
           {/* Goal detail modal — read-only progress + per-record contribution list.
@@ -2206,7 +2228,23 @@ export default function App() {
                     type="date"
                     defaultValue={goal?.deadline ? new Date(goal.deadline).toISOString().slice(0, 10) : ""}
                     id="goal-deadline-input"
+                    className="appearance-none min-w-0"
                   />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    {lang === "ko" ? "계좌 (선택)" : "Account (optional)"}
+                  </Label>
+                  <Input
+                    type="text"
+                    defaultValue={goal?.account ?? ""}
+                    placeholder={lang === "ko" ? "예: 토스 ●●2345" : "e.g. Wealthfront ●●1234"}
+                    maxLength={40}
+                    id="goal-account-input"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {lang === "ko" ? "계좌번호 전체는 적지 마세요" : "Don't enter the full account number"}
+                  </p>
                 </div>
                 {/* Shared-goal checkbox (Phase 1: UI scaffold; Phase 2 will wire invite flow) */}
                 <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
@@ -2261,7 +2299,9 @@ export default function App() {
                     const deadlineStr = deadlineInput.value
                     const deadline = deadlineStr ? new Date(deadlineStr + "T00:00:00").getTime() : undefined
                     const type: GoalType = sharedInput?.checked ? "shared" : "personal"
-                    saveGoal({ name, iconKey, targetUsd, deadline, type })
+                    const accountInput = document.getElementById("goal-account-input") as HTMLInputElement | null
+                    const account = accountInput?.value.trim() || undefined
+                    saveGoal({ name, iconKey, targetUsd, deadline, type, account })
                   }}>
                     {lang === "ko" ? "저장" : "Save"}
                   </Button>
@@ -2512,6 +2552,46 @@ export default function App() {
           {/* Delete-with-when modal — for recurring records the user picks the
               cutoff (which weekly occurrence, which day, which month) so weekly
               and daily recurrence stop precisely. Once items get a simple confirm. */}
+          {/* Long-term account editor — small modal opened by tapping the long-term card.
+              Just a free-text label so the user can note which account holds these funds. */}
+          {longTermAccountEditorOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setLongTermAccountEditorOpen(false)}>
+              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
+                <p className="font-semibold">
+                  {lang === "ko" ? "장기 저축 계좌" : "Long-term account"}
+                </p>
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    {lang === "ko" ? "계좌 (선택)" : "Account (optional)"}
+                  </Label>
+                  <Input
+                    autoFocus
+                    type="text"
+                    defaultValue={longTermAccount}
+                    placeholder={lang === "ko" ? "예: 토스 ●●2345" : "e.g. Wealthfront ●●1234"}
+                    maxLength={40}
+                    id="lt-account-input"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {lang === "ko" ? "계좌번호 전체는 적지 마세요" : "Don't enter the full account number"}
+                  </p>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setLongTermAccountEditorOpen(false)}>
+                    {lang === "ko" ? "취소" : "Cancel"}
+                  </Button>
+                  <Button className="flex-1" onClick={() => {
+                    const input = document.getElementById("lt-account-input") as HTMLInputElement
+                    setLongTermAccount(input.value.trim())
+                    setLongTermAccountEditorOpen(false)
+                  }}>
+                    {lang === "ko" ? "저장" : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Verify destination modal — shown when the user toggles a row's check ON
               and a goal exists, so they can pick whether the money went to the goal
               or to long-term savings. If no goal exists, list-row check skips this
