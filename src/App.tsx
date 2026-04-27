@@ -1932,14 +1932,15 @@ export default function App() {
               <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
                 <button className="w-full text-left" onClick={() => setGoalDetailOpen(true)}>
                   <CardContent className="p-4 space-y-2">
-                    {/* Top row: name + 30Y projection of the target. Target itself
-                        moves into the meta line below to drop one row. */}
+                    {/* Top row: bucket prefix ("Short-term") + goal name as subtitle,
+                        mirroring the long-term card's "Long-term" title. 30Y projection
+                        on the right. */}
                     <div className="flex items-center">
                       <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
                         <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
-                        <span className="text-sm font-semibold truncate">{goal.name}</span>
-                        <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">
-                          {lang === "ko" ? "단기" : "Short-term"}
+                        <span className="text-sm truncate">
+                          <span className="font-semibold">{lang === "ko" ? "단기" : "Short-term"}</span>
+                          <span className="font-normal text-muted-foreground">: {goal.name}</span>
                         </span>
                       </div>
                       {horizons.map(h => (
