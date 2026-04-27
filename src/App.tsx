@@ -33,9 +33,16 @@ type RecordItem = {
   // "I actually moved this money" tracking. Once items use a single bool;
   // recurring items track per-month with "YYYY-MM" keys (each month is a
   // separate transfer to verify).
-  verified?: boolean
-  verifiedMonths?: string[]
+  verified?: boolean                                  // legacy (read-only after migration)
+  verifiedMonths?: string[]                            // legacy (read-only after migration)
+  // Each verified transfer carries a destination bucket: "goal" (toward the
+  // active short-term goal) or "long" (long-term savings). New writes use the
+  // *To fields; legacy values are read as "long" by getVerifiedDestination.
+  verifiedTo?: Destination
+  verifiedMonthsTo?: { [monthKey: string]: Destination }
 }
+
+type Destination = "goal" | "long"
 
 // Effective end timestamp for a recurring record. Prefers the precise endDate;
 // falls back to start-of-(endYear, endMonth) for older records that only
@@ -52,9 +59,20 @@ function monthKey(year: number, month: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}`
 }
 
-function isVerifiedFor(r: RecordItem, viewYear: number, viewMonth: number): boolean {
-  if (r.type !== "recurring") return !!r.verified
-  return (r.verifiedMonths ?? []).includes(monthKey(viewYear, viewMonth))
+// Returns the bucket the user moved this month's contribution into, or null
+// if not verified yet. Reads the new *To fields first; falls back to the
+// legacy boolean/array (treated as "long" — the safer migration default).
+function getVerifiedDestination(r: RecordItem, viewYear: number, viewMonth: number): Destination | null {
+  if (r.type !== "recurring") {
+    if (r.verifiedTo) return r.verifiedTo
+    if (r.verified) return "long"
+    return null
+  }
+  const key = monthKey(viewYear, viewMonth)
+  const fromMap = r.verifiedMonthsTo?.[key]
+  if (fromMap) return fromMap
+  if ((r.verifiedMonths ?? []).includes(key)) return "long"
+  return null
 }
 
 type GoalIconKey = "plane" | "home" | "car" | "grad" | "heart" | "piggy" | "target"
@@ -321,6 +339,10 @@ export default function App() {
   // date so weekly/daily records stop at the right occurrence, not just the
   // start of a month.
   const [deletingRecord, setDeletingRecord] = useState<RecordItem | null>(null)
+  // Verify destination modal — opens when the user toggles a transfer ON and
+  // a short-term goal exists, so they can pick whether the money went to the
+  // goal or to long-term savings.
+  const [verifyingRecord, setVerifyingRecord] = useState<RecordItem | null>(null)
   // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
   // rendering a single column without a broader refactor.
   const [horizons, setHorizons] = useState<number[]>([10])
@@ -553,7 +575,8 @@ export default function App() {
         : item.usdAmt
       const fvByHorizon: Record<number, number> = {}
       const fvRecurringByHorizon: Record<number, number> = {}
-      const verified = isVerifiedFor(item, viewMonth.year, viewMonth.month)
+      const destination = getVerifiedDestination(item, viewMonth.year, viewMonth.month)
+      const verified = destination !== null
       horizons.forEach(h => {
         fvByHorizon[h] = fvLump(monthAmt, r, h)
         if (isRecurring) {
@@ -568,7 +591,7 @@ export default function App() {
       })
       monthSaved += monthAmt
       if (verified) monthSavedVerified += monthAmt
-      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt, verified }
+      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt, verified, destination }
     })
     return { enriched, monthSaved, monthSavedVerified, horizonSums, horizonSumsVerified }
   }, [records, rate, viewMonth, horizons])
@@ -626,6 +649,46 @@ export default function App() {
   }, [records, goal])
   const totalSaved = savingsSummary.totalSaved
   const projectedByDeadline = savingsSummary.projectedByDeadline
+
+  // Actual balances by destination — sums the months/items the user has
+  // explicitly verified as moved to each bucket. These are "real" numbers
+  // (only counts confirmed transfers), distinct from totalSaved which counts
+  // every record regardless of verification.
+  const verifiedBalances = useMemo(() => {
+    const r = parseFloat(rate) || 10
+    void r // not used here; kept for parity with other useMemos that depend on rate
+    let goalBalance = 0
+    let longBalance = 0
+    records.forEach(item => {
+      const isRecurring = item.type === "recurring"
+      const freq = item.freq ?? (isRecurring ? 12 : 1)
+      if (!isRecurring) {
+        const dest = item.verifiedTo ?? (item.verified ? "long" : null)
+        if (dest === "goal") goalBalance += item.usdAmt
+        else if (dest === "long") longBalance += item.usdAmt
+        return
+      }
+      // Recurring: iterate every month the user has marked, sum that month's
+      // contribution into the right bucket.
+      const seen = new Set<string>()
+      const map = item.verifiedMonthsTo ?? {}
+      Object.entries(map).forEach(([key, dest]) => {
+        seen.add(key)
+        const [y, m] = key.split("-").map(Number)
+        const amt = contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
+        if (dest === "goal") goalBalance += amt
+        else if (dest === "long") longBalance += amt
+      })
+      // Legacy verifiedMonths array (no destination) → treat as "long"
+      ;(item.verifiedMonths ?? []).forEach(key => {
+        if (seen.has(key)) return
+        const [y, m] = key.split("-").map(Number)
+        const amt = contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
+        longBalance += amt
+      })
+    })
+    return { goalBalance, longBalance }
+  }, [records, rate])
 
   // Per-record contribution to the current goal. Mirrors sumThrough's logic but
   // tallies per item so the goal-detail modal can list which records contribute
@@ -774,16 +837,25 @@ export default function App() {
     }, 800)
   }
 
-  function toggleRecordVerified(id: string) {
+  // Set (or clear) the destination for this record's transfer in the current
+  // viewMonth. dest=null clears the verification. Cleans up legacy fields so
+  // they don't shadow the new map-based storage.
+  function setRecordDestination(id: string, dest: Destination | null) {
     setRecords(prev => prev.map(r => {
       if (r.id !== id) return r
       if (r.type !== "recurring") {
-        return { ...r, verified: !r.verified }
+        return {
+          ...r,
+          verifiedTo: dest ?? undefined,
+          verified: undefined, // drop legacy
+        }
       }
       const key = monthKey(viewMonth.year, viewMonth.month)
-      const current = r.verifiedMonths ?? []
-      const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key]
-      return { ...r, verifiedMonths: next }
+      const map = { ...(r.verifiedMonthsTo ?? {}) }
+      if (dest) map[key] = dest
+      else delete map[key]
+      const cleanedLegacy = (r.verifiedMonths ?? []).filter(k => k !== key)
+      return { ...r, verifiedMonthsTo: map, verifiedMonths: cleanedLegacy }
     }))
   }
 
@@ -1587,13 +1659,31 @@ export default function App() {
                       {/* Verified toggle — tap to mark "I actually moved this money".
                           Recurring tracks per-month, so the same row will reset to
                           unverified when the user navigates to a different month. */}
+                      {/* Verified toggle. Off → if a goal exists open the destination
+                          modal; otherwise mark as long-term immediately. On → tap clears
+                          back to unverified (no modal needed for un-marking). The check
+                          color reflects the destination: theme-primary for goal, emerald
+                          for long. */}
                       <button
                         type="button"
-                        onClick={e => { e.stopPropagation(); toggleRecordVerified(item.id) }}
+                        onClick={e => {
+                          e.stopPropagation()
+                          if (item.destination) {
+                            setRecordDestination(item.id, null)
+                          } else if (goal) {
+                            setVerifyingRecord(item)
+                          } else {
+                            setRecordDestination(item.id, "long")
+                          }
+                        }}
                         className="w-5 flex items-center justify-center pt-1"
                         aria-label={item.verified ? (lang === "ko" ? "이체 취소" : "Unmark moved") : (lang === "ko" ? "이체 표시" : "Mark moved")}
                       >
-                        {item.verified ? (
+                        {item.destination === "goal" ? (
+                          <span className="h-4 w-4 rounded-full bg-primary flex items-center justify-center">
+                            <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />
+                          </span>
+                        ) : item.destination === "long" ? (
                           <span className="h-4 w-4 rounded-full bg-emerald-500 flex items-center justify-center">
                             <Check className="h-3 w-3 text-white" strokeWidth={3} />
                           </span>
@@ -1896,6 +1986,30 @@ export default function App() {
                   <ChevronRight className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                 </CardContent>
               </button>
+            </Card>
+          )}
+
+          {/* Long-term savings card — actual balance the user has confirmed moving
+              into long-term (vs the short-term goal). Hidden until there's anything
+              to show so the empty state doesn't add noise. */}
+          {verifiedBalances.longBalance > 0 && (
+            <Card>
+              <CardContent className="p-4 flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                  <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm">
+                    {lang === "ko" ? "장기 저축" : "Long-term"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {lang === "ko" ? "이체 확인된 금액" : "Verified balance"}
+                  </div>
+                </div>
+                <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                  {fmt(verifiedBalances.longBalance)}
+                </span>
+              </CardContent>
             </Card>
           )}
 
@@ -2294,55 +2408,64 @@ export default function App() {
                     </div>
                   )
                 })()}
-                {/* Verified toggle — same data the list-row check writes to.
-                    Recurring items track per-month, so the explanation reminds
-                    the user this only marks the currently-viewed month. */}
+                {/* Verification destination picker — same data the list-row check writes
+                    to, but with the goal/long-term split visible. Three buttons:
+                    not moved / to goal / to long-term. If no goal exists, the goal
+                    button is hidden so the picker collapses to two states. */}
                 {(() => {
                   const isRec = editingRecord.type === "recurring"
-                  const verifiedNow = isVerifiedFor(editingRecord, viewMonth.year, viewMonth.month)
+                  const dest = getVerifiedDestination(editingRecord, viewMonth.year, viewMonth.month)
                   const monthLabel = lang === "ko"
                     ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
                     : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+                  const setDest = (d: Destination | null) => setRecordDestination(editingRecord.id, d)
+                  const baseBtn = "flex-1 flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-medium transition-colors"
                   return (
                     <div className="space-y-2 rounded-lg border border-border p-3">
                       <Label className="text-xs">
                         {lang === "ko" ? "이체 확인" : "Money moved"}
                         {isRec && <span className="text-muted-foreground"> · {monthLabel}</span>}
                       </Label>
-                      <button
-                        type="button"
-                        onClick={() => toggleRecordVerified(editingRecord.id)}
-                        className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-                          verifiedNow
-                            ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
-                            : "border-border hover:bg-muted"
-                        }`}
-                      >
-                        {verifiedNow ? (
-                          <span className="h-4 w-4 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                          </span>
-                        ) : (
-                          <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/40 flex-shrink-0" />
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setDest(null)}
+                          className={`${baseBtn} ${dest === null ? "border-foreground bg-muted" : "border-border hover:bg-muted/50"}`}
+                        >
+                          <span className="h-3 w-3 rounded-full border-2 border-muted-foreground/40 flex-shrink-0" />
+                          {lang === "ko" ? "안 옮김" : "Not moved"}
+                        </button>
+                        {goal && (
+                          <button
+                            type="button"
+                            onClick={() => setDest("goal")}
+                            className={`${baseBtn} ${dest === "goal" ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"}`}
+                          >
+                            <span className={`h-3 w-3 rounded-full bg-primary flex items-center justify-center flex-shrink-0 ${dest === "goal" ? "" : "opacity-50"}`}>
+                              {dest === "goal" && <Check className="h-2 w-2 text-primary-foreground" strokeWidth={3} />}
+                            </span>
+                            <span className="truncate">{goal.name}</span>
+                          </button>
                         )}
-                        <span className="font-medium">
-                          {verifiedNow
-                            ? (isRec
-                              ? (lang === "ko" ? "이번 달 옮겼어요" : "Moved this month")
-                              : (lang === "ko" ? "이 돈 옮겼어요" : "Moved this money"))
-                            : (isRec
-                              ? (lang === "ko" ? "이번 달 아직 안 옮겼어요" : "Not moved yet this month")
-                              : (lang === "ko" ? "아직 안 옮겼어요" : "Not moved yet"))}
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setDest("long")}
+                          className={`${baseBtn} ${dest === "long" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30" : "border-border hover:bg-muted/50"}`}
+                        >
+                          <span className={`h-3 w-3 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 ${dest === "long" ? "" : "opacity-50"}`}>
+                            {dest === "long" && <Check className="h-2 w-2 text-white" strokeWidth={3} />}
+                          </span>
+                          {lang === "ko" ? "장기" : "Long-term"}
+                        </button>
+                      </div>
                       <p className="text-[11px] text-muted-foreground leading-relaxed">
                         {isRec
                           ? (lang === "ko"
-                            ? "반복 항목은 매달 따로 체크해요. 다른 달로 넘어가면 다시 표시해야 합니다."
-                            : "Recurring items are checked monthly — each month is its own confirmation.")
+                            ? "반복 항목은 매달 따로 체크해요. 옮긴 돈이 어느 버킷에 가는지 선택하세요."
+                            : "Recurring items are checked monthly. Pick which bucket the money went into.")
                           : (lang === "ko"
-                            ? "체크된 항목만 합계의 진한 숫자에 포함됩니다."
-                            : "Only checked items count toward the bold totals.")}
+                            ? "옮긴 돈이 단기 목표로 가는지, 장기 저축으로 가는지 선택하세요."
+                            : "Pick whether the moved money goes to the goal or long-term savings.")}
                       </p>
                     </div>
                   )
@@ -2391,6 +2514,74 @@ export default function App() {
           {/* Delete-with-when modal — for recurring records the user picks the
               cutoff (which weekly occurrence, which day, which month) so weekly
               and daily recurrence stop precisely. Once items get a simple confirm. */}
+          {/* Verify destination modal — shown when the user toggles a row's check ON
+              and a goal exists, so they can pick whether the money went to the goal
+              or to long-term savings. If no goal exists, list-row check skips this
+              and writes "long" directly (no choice to make). */}
+          {verifyingRecord && goal && (() => {
+            const r = verifyingRecord
+            const closeModal = () => setVerifyingRecord(null)
+            const choose = (d: Destination) => {
+              setRecordDestination(r.id, d)
+              closeModal()
+            }
+            const GoalIcon = goalIcons[goal.iconKey] ?? Target
+            const monthLabel = lang === "ko"
+              ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
+              : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long" })
+            return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={closeModal}>
+                <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
+                  <div>
+                    <p className="font-semibold">
+                      {lang === "ko" ? "어디로 옮겼어요?" : "Where did it go?"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 truncate">
+                      {r.name}{r.type === "recurring" ? ` · ${monthLabel}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => choose("goal")}
+                      className="flex items-center gap-3 rounded-lg border border-border p-4 hover:border-primary hover:bg-primary/5 transition-colors text-left"
+                    >
+                      <span className={`flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 ${theme.textAccent} flex-shrink-0`}>
+                        <GoalIcon className="h-5 w-5" strokeWidth={1.5} />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm">{goal.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {lang === "ko" ? "단기 목표로" : "To goal"}
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => choose("long")}
+                      className="flex items-center gap-3 rounded-lg border border-border p-4 hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors text-left"
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                        <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm">
+                          {lang === "ko" ? "장기 저축" : "Long-term savings"}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {lang === "ko" ? "투자/은퇴용" : "Investment / retirement"}
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                  <Button variant="outline" className="w-full" onClick={closeModal}>
+                    {lang === "ko" ? "취소" : "Cancel"}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+
           {deletingRecord && (() => {
             const r = deletingRecord
             const isRecurring = r.type === "recurring"
