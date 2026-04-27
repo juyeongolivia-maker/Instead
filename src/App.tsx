@@ -1646,25 +1646,22 @@ export default function App() {
                       {/* Verified toggle — tap to mark "I actually moved this money".
                           Recurring tracks per-month, so the same row will reset to
                           unverified when the user navigates to a different month. */}
-                      {/* Verified toggle. Off → if a goal exists open the destination
-                          modal; otherwise mark as long-term immediately. On → tap clears
-                          back to unverified (no modal needed for un-marking). The check
-                          color reflects the destination: theme-primary for goal, emerald
-                          for long. */}
+                      {/* Verified toggle. With a goal in play, every tap opens the
+                          destination modal so the user can switch between Goal /
+                          Long-term / Not moved without first un-marking. With no
+                          goal there's only one bucket — tap simply toggles long. */}
                       <button
                         type="button"
                         onClick={e => {
                           e.stopPropagation()
-                          if (item.destination) {
-                            setRecordDestination(item.id, null)
-                          } else if (goal) {
+                          if (goal) {
                             setVerifyingRecord(item)
                           } else {
-                            setRecordDestination(item.id, "long")
+                            setRecordDestination(item.id, item.destination ? null : "long")
                           }
                         }}
                         className="w-5 flex items-center justify-center pt-1"
-                        aria-label={item.verified ? (lang === "ko" ? "이체 취소" : "Unmark moved") : (lang === "ko" ? "이체 표시" : "Mark moved")}
+                        aria-label={item.verified ? (lang === "ko" ? "이체 변경" : "Change destination") : (lang === "ko" ? "이체 표시" : "Mark moved")}
                       >
                         {item.destination === "goal" ? (
                           <span className="h-4 w-4 rounded-full bg-primary flex items-center justify-center">
@@ -2562,7 +2559,8 @@ export default function App() {
           {verifyingRecord && goal && (() => {
             const r = verifyingRecord
             const closeModal = () => setVerifyingRecord(null)
-            const choose = (d: Destination) => {
+            const currentDest = getVerifiedDestination(r, viewMonth.year, viewMonth.month)
+            const choose = (d: Destination | null) => {
               setRecordDestination(r.id, d)
               closeModal()
             }
@@ -2585,7 +2583,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => choose("goal")}
-                      className="flex items-center gap-3 rounded-lg border border-border p-4 hover:border-primary hover:bg-primary/5 transition-colors text-left"
+                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-primary hover:bg-primary/5 transition-colors text-left ${currentDest === "goal" ? "border-primary bg-primary/5" : "border-border"}`}
                     >
                       <span className={`flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 ${theme.textAccent} flex-shrink-0`}>
                         <GoalIcon className="h-5 w-5" strokeWidth={1.5} />
@@ -2596,11 +2594,12 @@ export default function App() {
                           {lang === "ko" ? "단기 목표로" : "To goal"}
                         </div>
                       </div>
+                      {currentDest === "goal" && <Check className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={3} />}
                     </button>
                     <button
                       type="button"
                       onClick={() => choose("long")}
-                      className="flex items-center gap-3 rounded-lg border border-border p-4 hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors text-left"
+                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors text-left ${currentDest === "long" ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-border"}`}
                     >
                       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
                         <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
@@ -2613,7 +2612,22 @@ export default function App() {
                           {lang === "ko" ? "투자/은퇴용" : "Investment / retirement"}
                         </div>
                       </div>
+                      {currentDest === "long" && <Check className="h-4 w-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={3} />}
                     </button>
+                    {/* Lets the user un-mark a transfer without first closing the modal — useful
+                        when correcting a mistaken Goal/Long pick on the same row. */}
+                    {currentDest && (
+                      <button
+                        type="button"
+                        onClick={() => choose(null)}
+                        className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted/50 transition-colors text-left text-xs text-muted-foreground"
+                      >
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-muted-foreground/40 flex-shrink-0" />
+                        <span className="flex-1">
+                          {lang === "ko" ? "이체 표시 해제" : "Unmark as moved"}
+                        </span>
+                      </button>
+                    )}
                   </div>
                   <Button variant="outline" className="w-full" onClick={closeModal}>
                     {lang === "ko" ? "취소" : "Cancel"}
