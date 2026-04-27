@@ -1990,28 +1990,26 @@ export default function App() {
           )}
 
           {/* Long-term savings card — actual balance the user has confirmed moving
-              into long-term (vs the short-term goal). Hidden until there's anything
-              to show so the empty state doesn't add noise. */}
-          {verifiedBalances.longBalance > 0 && (
-            <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
-                  <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm">
-                    {lang === "ko" ? "장기 저축" : "Long-term"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {lang === "ko" ? "이체 확인된 금액" : "Verified balance"}
-                  </div>
+              into long-term (vs the short-term goal). Always visible so the bucket
+              is discoverable from day one, even before any transfers exist. */}
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm">
+                  {lang === "ko" ? "장기 저축" : "Long-term"}
                 </div>
-                <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                  {fmt(verifiedBalances.longBalance)}
-                </span>
-              </CardContent>
-            </Card>
-          )}
+                <div className="text-xs text-muted-foreground">
+                  {lang === "ko" ? "이체 확인된 금액" : "Verified balance"}
+                </div>
+              </div>
+              <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                {fmt(verifiedBalances.longBalance)}
+              </span>
+            </CardContent>
+          </Card>
 
           {/* Goal detail modal — read-only progress + per-record contribution list.
               Edit goes through the Edit button so a casual tap can't accidentally
