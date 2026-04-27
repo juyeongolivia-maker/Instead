@@ -1912,16 +1912,19 @@ export default function App() {
               <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
                 <button className="w-full text-left" onClick={() => setGoalDetailOpen(true)}>
                   <CardContent className="p-4 space-y-2">
-                    {/* Top row: bucket prefix ("Short-term") + goal name as subtitle,
-                        mirroring the long-term card's "Long-term" title. 30Y projection
-                        on the right. */}
-                    <div className="flex items-center">
+                    {/* Top row mirrors the records list's columns exactly:
+                        name (flex-1) | Now (w-20: balance / target) | In 30Y (w-14: FV). */}
+                    <div className="flex items-start gap-3">
                       <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
                         <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
                         <span className="text-sm truncate">
                           <span className="font-semibold">{lang === "ko" ? "단기" : "Short-term"}</span>
                           <span className="font-normal text-muted-foreground">: {goal.name}</span>
                         </span>
+                      </div>
+                      <div className="w-20 text-right">
+                        <div className="text-sm font-bold leading-5">{fmt(committed)}</div>
+                        <div className="text-xs text-muted-foreground leading-4">/ {fmt(goal.targetUsd)}</div>
                       </div>
                       {horizons.map(h => (
                         <div key={h} className={`w-14 text-right text-xs font-medium leading-5 ${theme.textAccent}`}>
@@ -1935,14 +1938,8 @@ export default function App() {
                         style={{ width: `${committedPct}%` }}
                       />
                     </div>
-                    {/* Compact meta — current/target on the left, status on the right.
-                        Status pill collapses to "Short-term" when no deadline / not achieved
-                        so the card always carries the bucket label. */}
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {fmt(committed)} / {fmt(goal.targetUsd)}
-                        {goal.account && <span className="ml-1.5">· {goal.account}</span>}
-                      </span>
+                      <span>{goal.account || (lang === "ko" ? "계좌 추가하기" : "Add account")}</span>
                       {isAchieved ? (
                         <span className={`font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
                       ) : goal.deadline && daysLeft !== null ? (
@@ -1985,31 +1982,32 @@ export default function App() {
             </Card>
           )}
 
-          {/* Long-term savings card — laid out to mirror the goal card above:
-              icon + name on the left, headline number on the right, account
-              label on the second line if set. Tapping opens the small editor
-              for the account label. */}
+          {/* Long-term card — same 3-column layout as the goal card and the
+              records list above it: name (flex-1) | Now (w-20 balance) |
+              In 30Y (w-14 FV). 30Y FV is computed off the current verified
+              balance ("if you stop saving today and just let it compound"). */}
           <Card className="overflow-hidden">
             <button className="w-full text-left" onClick={() => setLongTermAccountEditorOpen(true)}>
               <CardContent className="p-4 space-y-2">
-                <div className="flex items-center">
+                <div className="flex items-start gap-3">
                   <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
                     <PiggyBank className="h-4 w-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
                     <span className="text-sm font-semibold truncate">
-                      {lang === "ko" ? "장기 저축" : "Long-term"}
+                      {lang === "ko" ? "장기" : "Long-term"}
                     </span>
                   </div>
-                  <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                    {fmt(verifiedBalances.longBalance)}
-                  </span>
+                  <div className="w-20 text-right">
+                    <div className="text-sm font-bold leading-5">{fmt(verifiedBalances.longBalance)}</div>
+                  </div>
+                  {horizons.map(h => (
+                    <div key={h} className="w-14 text-right text-xs font-medium leading-5 text-emerald-600 dark:text-emerald-400">
+                      {fmt(fvLump(verifiedBalances.longBalance, parseFloat(rate) || 10, h))}
+                    </div>
+                  ))}
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    {longTermAccount
-                      ? longTermAccount
-                      : (lang === "ko" ? "계좌 추가하기" : "Add account")}
-                  </span>
-                  <span>{lang === "ko" ? "이체 확인된 금액" : "Verified"}</span>
+                  <span>{longTermAccount || (lang === "ko" ? "계좌 추가하기" : "Add account")}</span>
+                  <span>{lang === "ko" ? "이체 확인" : "Verified"}</span>
                 </div>
               </CardContent>
             </button>
