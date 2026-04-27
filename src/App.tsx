@@ -657,7 +657,7 @@ export default function App() {
     return { totalSaved, projectedByDeadline }
   }, [records, goal])
   const totalSaved = savingsSummary.totalSaved
-  const projectedByDeadline = savingsSummary.projectedByDeadline
+  void totalSaved // historical: kept available for future displays that show all-records progress
 
   // Actual balances by destination — sums the months/items the user has
   // explicitly verified as moved to each bucket. These are "real" numbers
@@ -702,49 +702,27 @@ export default function App() {
   // Per-record contribution to the current goal. Mirrors sumThrough's logic but
   // tallies per item so the goal-detail modal can list which records contribute
   // most. Splits actual (already-saved) from committed (still-to-come this period).
+  // Per-record contribution to the active goal — but only counting transfers
+  // the user has actually verified as going to "goal". Records that exist but
+  // are unverified (or were sent to long-term) don't show up here.
   const goalContributions = useMemo(() => {
-    if (!goal) return [] as { record: RecordItem; actual: number; committed: number; total: number }[]
-    const now = new Date()
-    const currentAbs = now.getFullYear() * 12 + now.getMonth()
-    let lastMonthAbs = currentAbs
-    if (goal.deadline) {
-      const dl = new Date(goal.deadline)
-      const dlMonthAbs = dl.getFullYear() * 12 + dl.getMonth()
-      lastMonthAbs = dl.getDate() === 1 ? dlMonthAbs - 1 : dlMonthAbs
-    }
-    const horizonAbs = Math.max(currentAbs, lastMonthAbs)
+    if (!goal) return [] as { record: RecordItem; total: number }[]
     const out = records.map(item => {
-      const d = new Date(item.date)
-      const startAbs = d.getFullYear() * 12 + d.getMonth()
       const isRecurring = item.type === "recurring"
       const freq = item.freq ?? (isRecurring ? 12 : 1)
-      let actual = 0
-      let committed = 0
+      let total = 0
       if (!isRecurring) {
-        if (startAbs <= currentAbs) actual = item.usdAmt
-        else if (startAbs <= horizonAbs) committed = item.usdAmt
+        if (item.verifiedTo === "goal") total = item.usdAmt
       } else {
-        const endTs = getEndDate(item)
-        const endAbsExclusive = endTs !== undefined
-          ? (() => {
-            const e = new Date(endTs)
-            const eAbs = e.getFullYear() * 12 + e.getMonth()
-            return e.getDate() === 1 ? eAbs : eAbs + 1
-          })()
-          : horizonAbs + 1
-        const cap = Math.min(endAbsExclusive, horizonAbs + 1)
-        for (let abs = startAbs; abs < cap; abs++) {
-          const y = Math.floor(abs / 12)
-          const m = abs % 12
-          const c = contributionForMonth(item.usdAmt, freq, item.date, y, m, endTs)
-          if (abs <= currentAbs) actual += c
-          else committed += c
-        }
+        const map = item.verifiedMonthsTo ?? {}
+        Object.entries(map).forEach(([key, dest]) => {
+          if (dest !== "goal") return
+          const [y, m] = key.split("-").map(Number)
+          total += contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
+        })
       }
-      return { record: item, actual, committed, total: actual + committed }
+      return { record: item, total }
     }).filter(r => r.total > 0)
-    // Match the main list's grouping: monthly → weekly → daily → once,
-    // then by contribution amount desc within each group.
     const freqRank = (r: RecordItem) => {
       if (r.type !== "recurring") return 3
       if (r.freq === 12) return 0
@@ -1904,8 +1882,10 @@ export default function App() {
           {/* Goal card (below the list so records read first; goal reads as the "why").
               The horizon columns mirror the list's horizon checkboxes above — same state. */}
           {goal ? (() => {
-            // Committed = actual + recurring commitments through deadline. This is the headline.
-            const committed = projectedByDeadline
+            // Headline = actual money the user has confirmed moving into this goal.
+            // Records exist (and the month total counts them) without being committed to
+            // the goal — the bar should only fill from explicitly goal-tagged transfers.
+            const committed = verifiedBalances.goalBalance
             const committedPct = Math.min(100, (committed / goal.targetUsd) * 100)
             const isAchieved = !!goal.achievedAt
             const GoalIcon = goalIcons[goal.iconKey] ?? Target
@@ -2039,7 +2019,9 @@ export default function App() {
               Edit goes through the Edit button so a casual tap can't accidentally
               start mutating fields. */}
           {goalDetailOpen && goal && (() => {
-            const committed = projectedByDeadline
+            // Same source as the outer card — only goal-tagged transfers count
+            // toward the headline progress, not every record on the books.
+            const committed = verifiedBalances.goalBalance
             const committedPct = Math.min(100, (committed / goal.targetUsd) * 100)
             const isAchieved = !!goal.achievedAt
             const GoalIcon = goalIcons[goal.iconKey] ?? Target
@@ -2050,7 +2032,6 @@ export default function App() {
               daysLeft = Math.max(0, Math.ceil((goal.deadline - Date.now()) / msPerDay))
               onTrack = committed >= goal.targetUsd
             }
-            const futureCommitment = Math.max(0, committed - totalSaved)
             return (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setGoalDetailOpen(false)}>
                 <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -2084,19 +2065,6 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                  {/* Saved vs committed split */}
-                  {goal.deadline && futureCommitment > 0 && (
-                    <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/50 p-3">
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "지금까지" : "Saved"}</p>
-                        <p className="text-sm font-bold mt-0.5">{fmt(totalSaved)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "예정 (반복)" : "Committed"}</p>
-                        <p className="text-sm font-bold mt-0.5">{fmt(futureCommitment)}</p>
-                      </div>
-                    </div>
-                  )}
                   {/* Contribution list */}
                   {goalContributions.length > 0 && (
                     <div className="space-y-1">
@@ -2104,7 +2072,7 @@ export default function App() {
                         {lang === "ko" ? "기여 항목" : "Contributing items"}
                       </p>
                       <div className="space-y-1">
-                        {goalContributions.map(({ record: r, total, actual }) => {
+                        {goalContributions.map(({ record: r, total }) => {
                           const isRecurring = r.type === "recurring"
                           const suffix = isRecurring
                             ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
@@ -2126,18 +2094,13 @@ export default function App() {
                               <span className="text-right whitespace-nowrap">
                                 <span className={`text-sm font-medium ${theme.textAccent}`}>{fmt(total)}</span>
                                 <span className="text-[10px] text-muted-foreground ml-1">
-                                  {pct.toFixed(0)}%{actual > 0 && total > actual && "*"}
+                                  {pct.toFixed(0)}%
                                 </span>
                               </span>
                             </div>
                           )
                         })}
                       </div>
-                      {goalContributions.some(c => c.actual > 0 && c.total > c.actual) && (
-                        <p className="text-[10px] text-muted-foreground/70 mt-1">
-                          {lang === "ko" ? "* 일부는 아직 예정 (recurring 미래분)" : "* Some still committed (future recurring)"}
-                        </p>
-                      )}
                     </div>
                   )}
                   {/* Actions */}
