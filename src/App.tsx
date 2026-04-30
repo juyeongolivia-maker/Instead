@@ -1945,24 +1945,15 @@ export default function App() {
             const isAchieved = !!goal.achievedAt
             const GoalIcon = goalIcons[goal.iconKey] ?? Target
             const goalRate = parseFloat(rate) || 10
-            // Deadline-based stats
+            // Deadline-based stats — only the bits the meta line actually uses now
+            // that the "+\$X/m needed" detail is dropped.
             let daysLeft: number | null = null
-            let saveableMonths = 0
-            let shortfall = 0
             let onTrack = false
             if (goal.deadline) {
               const msPerDay = 1000 * 60 * 60 * 24
               daysLeft = Math.max(0, Math.ceil((goal.deadline - Date.now()) / msPerDay))
-              const now = new Date()
-              const currentAbs = now.getFullYear() * 12 + now.getMonth()
-              const dl = new Date(goal.deadline)
-              const dlMonthAbs = dl.getFullYear() * 12 + dl.getMonth()
-              const lastAbs = dl.getDate() === 1 ? dlMonthAbs - 1 : dlMonthAbs
-              saveableMonths = Math.max(1, lastAbs - currentAbs + 1)
-              shortfall = Math.max(0, goal.targetUsd - committed)
               onTrack = committed >= goal.targetUsd
             }
-            const extraMonthlyNeeded = goal.deadline ? shortfall / saveableMonths : 0
             return (
               <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
                 <button className="w-full text-left" onClick={() => setGoalDetailOpen(true)}>
@@ -1997,17 +1988,23 @@ export default function App() {
                       <span>{goal.account || (lang === "ko" ? "계좌 추가하기" : "Add account")}</span>
                       {isAchieved ? (
                         <span className={`font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
-                      ) : goal.deadline && daysLeft !== null ? (
-                        onTrack ? (
+                      ) : goal.deadline && daysLeft !== null ? (() => {
+                        const dl = new Date(goal.deadline)
+                        const dlLabel = lang === "ko"
+                          ? `${dl.getMonth() + 1}월 ${dl.getDate()}일`
+                          : dl.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                        // On-track/behind distinguished by the ✓ alone — drops the
+                        // "+\$X/m needed" detail since it cluttered the meta line.
+                        return onTrack ? (
                           <span className={`font-semibold ${theme.textAccent}`}>
-                            {lang === "ko" ? `${daysLeft}일 ✓` : `${daysLeft}d ✓`}
+                            {lang === "ko" ? `~${dlLabel} ✓` : `by ${dlLabel} ✓`}
                           </span>
                         ) : (
                           <span>
-                            {lang === "ko" ? `${daysLeft}일 · +${fmt(extraMonthlyNeeded)}/월` : `${daysLeft}d · +${fmt(extraMonthlyNeeded)}/m`}
+                            {lang === "ko" ? `~${dlLabel}` : `by ${dlLabel}`}
                           </span>
                         )
-                      ) : null}
+                      })() : null}
                     </div>
                   </CardContent>
                 </button>
@@ -2122,9 +2119,13 @@ export default function App() {
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{committedPct.toFixed(0)}%</span>
-                      {goal.deadline && daysLeft !== null && (
-                        <span>{lang === "ko" ? `${daysLeft}일 남음` : `${daysLeft}d left`}</span>
-                      )}
+                      {goal.deadline && daysLeft !== null && (() => {
+                        const dl = new Date(goal.deadline)
+                        const dlLabel = lang === "ko"
+                          ? `${dl.getMonth() + 1}월 ${dl.getDate()}일`
+                          : dl.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                        return <span>{lang === "ko" ? `~${dlLabel}` : `by ${dlLabel}`}</span>
+                      })()}
                     </div>
                   </div>
                   {/* Contribution list */}
