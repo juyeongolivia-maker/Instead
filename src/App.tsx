@@ -390,6 +390,13 @@ export default function App() {
 
   const t = i18n[lang]
   const theme = themes[themeColor]
+  // Bucket colors are intentionally fixed (independent of the user's theme
+  // pick). Short-term = orange (warm, "treasure"), long-term = emerald
+  // (growth). Theme color still drives the rest of the app — buttons, FAB,
+  // sign-in icon, etc.
+  const goalAccent = "text-orange-600 dark:text-orange-400"
+  const goalBg = "bg-orange-500"
+  const goalBgTint = "bg-orange-100 dark:bg-orange-900/30"
 
   // Gate the save effect: don't overwrite localStorage until initial load has finished.
   // Otherwise the mount-time save (with default empty state) clobbers whatever load/sync just set.
@@ -1722,8 +1729,8 @@ export default function App() {
                         aria-label={item.verified ? (lang === "ko" ? "이체 변경" : "Change destination") : (lang === "ko" ? "이체 표시" : "Mark moved")}
                       >
                         {item.destination === "goal" ? (
-                          <span className="h-4 w-4 rounded-full bg-primary flex items-center justify-center">
-                            <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />
+                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${goalBg}`}>
+                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
                           </span>
                         ) : item.destination === "long" ? (
                           <span className="h-4 w-4 rounded-full bg-emerald-500 flex items-center justify-center">
@@ -1778,7 +1785,7 @@ export default function App() {
                       {lang === "ko" ? "이 달 합계" : "Month total"}
                     </span>
                     <div className="w-20 text-right">
-                      <div className="text-base font-extrabold leading-5">
+                      <div className="text-sm font-bold leading-5">
                         {fmt(historySummary.monthSavedVerified)}
                       </div>
                       {historySummary.monthSaved > historySummary.monthSavedVerified && (
@@ -1965,32 +1972,32 @@ export default function App() {
                         name (flex-1) | Now (w-20: balance / target) | In 30Y (w-14: FV). */}
                     <div className="flex items-start gap-3">
                       <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
-                        <GoalIcon className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
+                        <GoalIcon className={`h-4 w-4 flex-shrink-0 ${goalAccent}`} strokeWidth={1.5} />
                         <span className="text-sm truncate">
                           <span className="font-semibold">{lang === "ko" ? "단기" : "Short-term"}</span>
                           <span className="font-normal text-muted-foreground">: {goal.name}</span>
                         </span>
                       </div>
                       <div className="w-20 text-right">
-                        <div className="text-xs font-semibold leading-5">{fmt(committed)}</div>
+                        <div className="text-sm font-bold leading-5">{fmt(committed)}</div>
                         <div className="text-xs text-muted-foreground leading-4">/ {fmt(goal.targetUsd)}</div>
                       </div>
                       {horizons.map(h => (
-                        <div key={h} className={`w-14 text-right text-xs font-medium leading-5 ${theme.textAccent}`}>
+                        <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${goalAccent}`}>
                           {fmt(fvLump(goal.targetUsd, goalRate, h))}
                         </div>
                       ))}
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                       <div
-                        className="h-full rounded-full bg-primary transition-all"
+                        className={`h-full rounded-full transition-all ${goalBg}`}
                         style={{ width: `${committedPct}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{goal.account || (lang === "ko" ? "계좌 별명 추가" : "Add nickname")}</span>
                       {isAchieved ? (
-                        <span className={`font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
+                        <span className={`font-semibold ${goalAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
                       ) : goal.deadline && daysLeft !== null ? (() => {
                         const dl = new Date(goal.deadline)
                         const dlLabel = lang === "ko"
@@ -1999,7 +2006,7 @@ export default function App() {
                         // On-track/behind distinguished by the ✓ alone — drops the
                         // "+\$X/m needed" detail since it cluttered the meta line.
                         return onTrack ? (
-                          <span className={`font-semibold ${theme.textAccent}`}>
+                          <span className={`font-semibold ${goalAccent}`}>
                             {lang === "ko" ? `~${dlLabel} ✓` : `by ${dlLabel} ✓`}
                           </span>
                         ) : (
@@ -2020,7 +2027,7 @@ export default function App() {
                 onClick={() => setGoalEditorOpen(true)}
               >
                 <CardContent className="p-4 flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-muted ${theme.textAccent}`}>
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${goalBgTint} ${goalAccent}`}>
                     <Target className="h-5 w-5" strokeWidth={1.5} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -2055,7 +2062,7 @@ export default function App() {
                     </span>
                   </div>
                   <div className="w-20 text-right">
-                    <div className="text-xs font-semibold leading-5">{fmt(verifiedBalances.longBalance)}</div>
+                    <div className="text-sm font-bold leading-5">{fmt(verifiedBalances.longBalance)}</div>
                   </div>
                   {horizons.map(h => {
                     const r = parseFloat(rate) || 10
@@ -2065,7 +2072,7 @@ export default function App() {
                       0,
                     )
                     return (
-                      <div key={h} className="w-14 text-right text-xs font-medium leading-5 text-emerald-600 dark:text-emerald-400">
+                      <div key={h} className="w-14 text-right text-sm font-bold leading-5 text-emerald-600 dark:text-emerald-400">
                         {fmt(lumpPart + streamPart)}
                       </div>
                     )
@@ -2102,13 +2109,13 @@ export default function App() {
                   {/* Header: name + status pill */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <GoalIcon className={`h-5 w-5 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
+                      <GoalIcon className={`h-5 w-5 flex-shrink-0 ${goalAccent}`} strokeWidth={1.5} />
                       <span className="font-bold text-base truncate">{goal.name}</span>
                     </div>
                     {isAchieved ? (
-                      <span className={`text-xs font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 🎉" : "Achieved 🎉"}</span>
+                      <span className={`text-xs font-semibold ${goalAccent}`}>{lang === "ko" ? "달성 🎉" : "Achieved 🎉"}</span>
                     ) : goal.deadline && daysLeft !== null ? (
-                      <span className={`text-xs font-semibold ${onTrack ? theme.textAccent : "text-muted-foreground"}`}>
+                      <span className={`text-xs font-semibold ${onTrack ? goalAccent : "text-muted-foreground"}`}>
                         {onTrack ? (lang === "ko" ? "순조롭게 ✓" : "On track ✓") : (lang === "ko" ? "더 분발해야" : "Behind")}
                       </span>
                     ) : null}
@@ -2120,7 +2127,7 @@ export default function App() {
                       <span className="text-sm text-muted-foreground">/ {fmt(goal.targetUsd)}</span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${committedPct}%` }} />
+                      <div className={`h-full rounded-full transition-all ${goalBg}`} style={{ width: `${committedPct}%` }} />
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{committedPct.toFixed(0)}%</span>
@@ -2160,7 +2167,7 @@ export default function App() {
                                 <span className="text-xs text-muted-foreground whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
                               </span>
                               <span className="text-right whitespace-nowrap">
-                                <span className={`text-sm font-medium ${theme.textAccent}`}>{fmt(total)}</span>
+                                <span className={`text-sm font-medium ${goalAccent}`}>{fmt(total)}</span>
                                 <span className="text-[10px] text-muted-foreground ml-1">
                                   {pct.toFixed(0)}%
                                 </span>
@@ -2599,10 +2606,10 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setDest("goal")}
-                            className={`${baseBtn} ${dest === "goal" ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"}`}
+                            className={`${baseBtn} ${dest === "goal" ? "border-orange-500 bg-orange-50 dark:bg-orange-950/30" : "border-border hover:bg-muted/50"}`}
                           >
-                            <span className={`h-3 w-3 rounded-full bg-primary flex items-center justify-center flex-shrink-0 ${dest === "goal" ? "" : "opacity-50"}`}>
-                              {dest === "goal" && <Check className="h-2 w-2 text-primary-foreground" strokeWidth={3} />}
+                            <span className={`h-3 w-3 rounded-full flex items-center justify-center flex-shrink-0 ${goalBg} ${dest === "goal" ? "" : "opacity-50"}`}>
+                              {dest === "goal" && <Check className="h-2 w-2 text-white" strokeWidth={3} />}
                             </span>
                             <span className="truncate">{goal.name}</span>
                           </button>
@@ -2745,9 +2752,9 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => choose("goal")}
-                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-primary hover:bg-primary/5 transition-colors text-left ${currentDest === "goal" ? "border-primary bg-primary/5" : "border-border"}`}
+                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-orange-500 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors text-left ${currentDest === "goal" ? "border-orange-500 bg-orange-50/50 dark:bg-orange-950/20" : "border-border"}`}
                     >
-                      <span className={`flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 ${theme.textAccent} flex-shrink-0`}>
+                      <span className={`flex h-10 w-10 items-center justify-center rounded-full ${goalBgTint} ${goalAccent} flex-shrink-0`}>
                         <GoalIcon className="h-5 w-5" strokeWidth={1.5} />
                       </span>
                       <div className="flex-1 min-w-0">
@@ -2756,7 +2763,7 @@ export default function App() {
                           {lang === "ko" ? "단기 목표로" : "To goal"}
                         </div>
                       </div>
-                      {currentDest === "goal" && <Check className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={3} />}
+                      {currentDest === "goal" && <Check className={`h-4 w-4 flex-shrink-0 ${goalAccent}`} strokeWidth={3} />}
                     </button>
                     <button
                       type="button"
