@@ -1739,13 +1739,20 @@ export default function App() {
                         className="w-5 flex items-center justify-center pt-1"
                         aria-label={item.verified ? (lang === "ko" ? "이체 변경" : "Change destination") : (lang === "ko" ? "이체 표시" : "Mark moved")}
                       >
+                        {/* Tag tells the user where this row's money went by mirroring
+                            the destination card's own icon: goal tag uses the goal's
+                            GoalIcon (✈ / 🏠 / etc), long tag uses PiggyBank. Same
+                            theme color on both so they visually belong to one palette. */}
                         {item.destination === "goal" ? (
-                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${goalBg}`}>
-                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${theme.bgAccent}`}>
+                            {(() => {
+                              const RowGoalIcon = goal ? (goalIcons[goal.iconKey] ?? Target) : Target
+                              return <RowGoalIcon className="h-2.5 w-2.5 text-white" strokeWidth={2.5} />
+                            })()}
                           </span>
                         ) : item.destination === "long" ? (
-                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${longBg}`}>
-                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${theme.bgAccent}`}>
+                            <PiggyBank className="h-2.5 w-2.5 text-white" strokeWidth={2} />
                           </span>
                         ) : (
                           <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 hover:border-muted-foreground/60 transition-colors" />
