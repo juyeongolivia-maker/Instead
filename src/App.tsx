@@ -696,8 +696,20 @@ export default function App() {
         longBalance += amt
       })
     })
-    return { goalBalance, longBalance }
-  }, [records, rate])
+    // Recurring records currently routed to long-term — used to project a
+    // "if this pattern continues" 30Y stream FV alongside the lump compound
+    // of the existing balance. Once-items aren't ongoing, so they don't add
+    // to the stream (only the lump portion via longBalance above).
+    const longStreamComponents: { annual: number; freq: number }[] = []
+    records.forEach(item => {
+      if (item.type !== "recurring") return
+      const dest = getVerifiedDestination(item, viewMonth.year, viewMonth.month)
+      if (dest !== "long") return
+      const freq = item.freq ?? 12
+      longStreamComponents.push({ annual: item.usdAmt * freq, freq })
+    })
+    return { goalBalance, longBalance, longStreamComponents }
+  }, [records, rate, viewMonth])
 
   // Per-record contribution to the current goal. Mirrors sumThrough's logic but
   // tallies per item so the goal-detail modal can list which records contribute
@@ -1979,10 +1991,11 @@ export default function App() {
             </Card>
           )}
 
-          {/* Long-term card — same 3-column layout as the goal card and the
-              records list above it: name (flex-1) | Now (w-20 balance) |
-              In 30Y (w-14 FV). 30Y FV is computed off the current verified
-              balance ("if you stop saving today and just let it compound"). */}
+          {/* Long-term card — 3-column layout matches the records list and goal
+              card above. 30Y FV combines two stories: existing balance compounded
+              + ongoing pattern (recurring items currently routed to long-term)
+              continuing for the horizon. Same "if you keep this up" logic the
+              list rows already use, so both reads consistently. */}
           <Card className="overflow-hidden">
             <button className="w-full text-left" onClick={() => setLongTermAccountEditorOpen(true)}>
               <CardContent className="p-4 space-y-2">
@@ -1996,15 +2009,23 @@ export default function App() {
                   <div className="w-20 text-right">
                     <div className="text-sm font-bold leading-5">{fmt(verifiedBalances.longBalance)}</div>
                   </div>
-                  {horizons.map(h => (
-                    <div key={h} className="w-14 text-right text-xs font-medium leading-5 text-emerald-600 dark:text-emerald-400">
-                      {fmt(fvLump(verifiedBalances.longBalance, parseFloat(rate) || 10, h))}
-                    </div>
-                  ))}
+                  {horizons.map(h => {
+                    const r = parseFloat(rate) || 10
+                    const lumpPart = fvLump(verifiedBalances.longBalance, r, h)
+                    const streamPart = verifiedBalances.longStreamComponents.reduce(
+                      (sum, c) => sum + fvRecurring(c.annual, r, h, c.freq),
+                      0,
+                    )
+                    return (
+                      <div key={h} className="w-14 text-right text-xs font-medium leading-5 text-emerald-600 dark:text-emerald-400">
+                        {fmt(lumpPart + streamPart)}
+                      </div>
+                    )
+                  })}
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{longTermAccount || (lang === "ko" ? "계좌 추가하기" : "Add account")}</span>
-                  <span>{lang === "ko" ? "이체 확인" : "Verified"}</span>
+                  <span>{lang === "ko" ? "현재 패턴 유지 시" : "If kept up"}</span>
                 </div>
               </CardContent>
             </button>
