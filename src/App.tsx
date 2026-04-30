@@ -338,6 +338,9 @@ export default function App() {
   // Edit happens via a button inside this detail modal so a casual tap on the
   // goal card no longer drops users into a write-mode form.
   const [goalDetailOpen, setGoalDetailOpen] = useState(false)
+  // Long-term detail modal — same pattern as goal detail: tap card opens
+  // read-only contribution list; Edit button opens the account editor.
+  const [longTermDetailOpen, setLongTermDetailOpen] = useState(false)
   // Delete-confirmation modal — for recurring records the user picks the cutoff
   // date so weekly/daily records stop at the right occurrence, not just the
   // start of a month.
@@ -748,6 +751,49 @@ export default function App() {
     })
     return out
   }, [records, goal])
+
+  // Per-record contribution to the long-term bucket — counts every month/item
+  // verified as routed to "long". Mirrors goalContributions so both detail
+  // modals can render the same list shape.
+  const longTermContributions = useMemo(() => {
+    const out = records.map(item => {
+      const isRecurring = item.type === "recurring"
+      const freq = item.freq ?? (isRecurring ? 12 : 1)
+      let total = 0
+      if (!isRecurring) {
+        const dest = item.verifiedTo ?? (item.verified ? "long" : null)
+        if (dest === "long") total = item.usdAmt
+      } else {
+        const map = item.verifiedMonthsTo ?? {}
+        const seen = new Set<string>()
+        Object.entries(map).forEach(([key, dest]) => {
+          seen.add(key)
+          if (dest !== "long") return
+          const [y, m] = key.split("-").map(Number)
+          total += contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
+        })
+        // Legacy verifiedMonths (no destination) → treat as long
+        ;(item.verifiedMonths ?? []).forEach(key => {
+          if (seen.has(key)) return
+          const [y, m] = key.split("-").map(Number)
+          total += contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
+        })
+      }
+      return { record: item, total }
+    }).filter(r => r.total > 0)
+    const freqRank = (r: RecordItem) => {
+      if (r.type !== "recurring") return 3
+      if (r.freq === 12) return 0
+      if (r.freq === 52) return 1
+      return 2
+    }
+    out.sort((a, b) => {
+      const fd = freqRank(a.record) - freqRank(b.record)
+      if (fd !== 0) return fd
+      return b.total - a.total
+    })
+    return out
+  }, [records])
 
   // Monthly savings series from the first record's month through the current month.
   // Feeds the cumulative chart: bars = that month's saving, area = running total.
@@ -1997,7 +2043,7 @@ export default function App() {
               continuing for the horizon. Same "if you keep this up" logic the
               list rows already use, so both reads consistently. */}
           <Card className="overflow-hidden">
-            <button className="w-full text-left" onClick={() => setLongTermAccountEditorOpen(true)}>
+            <button className="w-full text-left" onClick={() => setLongTermDetailOpen(true)}>
               <CardContent className="p-4 space-y-2">
                 <div className="flex items-start gap-3">
                   <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
@@ -2125,6 +2171,95 @@ export default function App() {
                       {lang === "ko" ? "닫기" : "Close"}
                     </Button>
                     <Button className="flex-1" onClick={() => { setGoalDetailOpen(false); setGoalEditorOpen(true) }}>
+                      {lang === "ko" ? "편집" : "Edit"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Long-term detail modal — same shape as the goal detail: header,
+              balance + 30Y projection, contribution list, Edit button (which
+              opens the account editor). Mirroring the goal pattern means a
+              casual tap on either card behaves consistently. */}
+          {longTermDetailOpen && (() => {
+            const r = parseFloat(rate) || 10
+            const lumpPart = fvLump(verifiedBalances.longBalance, r, 30)
+            const streamPart = verifiedBalances.longStreamComponents.reduce(
+              (sum, c) => sum + fvRecurring(c.annual, r, 30, c.freq),
+              0,
+            )
+            const projection = lumpPart + streamPart
+            return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setLongTermDetailOpen(false)}>
+                <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Header */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <PiggyBank className="h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
+                      <span className="font-bold text-base truncate">{lang === "ko" ? "장기 저축" : "Long-term savings"}</span>
+                    </div>
+                  </div>
+                  {/* Balance + 30Y projection */}
+                  <div className="space-y-1">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-2xl font-extrabold">{fmt(verifiedBalances.longBalance)}</span>
+                      <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                        {lang === "ko" ? `30년 후: ${fmt(projection)}` : `In 30Y: ${fmt(projection)}`}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      {lang === "ko" ? "현재 패턴 유지 시 (연 10% 복리 가정)" : "If kept up at current pace (10%/yr compound)"}
+                    </p>
+                  </div>
+                  {/* Account info */}
+                  {longTermAccount && (
+                    <div className="rounded-lg bg-muted/50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "계좌" : "Account"}</p>
+                      <p className="text-sm font-medium mt-0.5">{longTermAccount}</p>
+                    </div>
+                  )}
+                  {/* Contributions list */}
+                  {longTermContributions.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {lang === "ko" ? "기여 항목" : "Contributing items"}
+                      </p>
+                      <div className="space-y-1">
+                        {longTermContributions.map(({ record: r2, total }) => {
+                          const isRecurring = r2.type === "recurring"
+                          const suffix = isRecurring
+                            ? (r2.freq === 365 ? (lang === "ko" ? "/일" : "/d")
+                              : r2.freq === 52 ? (lang === "ko" ? "/주" : "/w")
+                              : (lang === "ko" ? "/월" : "/m"))
+                            : ""
+                          const dotColor = !isRecurring ? "bg-amber-400"
+                            : r2.freq === 365 ? "bg-emerald-400"
+                            : r2.freq === 52 ? "bg-sky-400"
+                            : "bg-violet-400"
+                          return (
+                            <div key={r2.id} className="flex items-center justify-between gap-2 py-1">
+                              <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+                                <span className="text-sm font-semibold truncate">{r2.name}</span>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">{fmt(r2.usdAmt)}{suffix}</span>
+                              </span>
+                              <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                {fmt(total)}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setLongTermDetailOpen(false)}>
+                      {lang === "ko" ? "닫기" : "Close"}
+                    </Button>
+                    <Button className="flex-1" onClick={() => { setLongTermDetailOpen(false); setLongTermAccountEditorOpen(true) }}>
                       {lang === "ko" ? "편집" : "Edit"}
                     </Button>
                   </div>
