@@ -2060,14 +2060,17 @@ export default function App() {
               + ongoing pattern (recurring items currently routed to long-term)
               continuing for the horizon. Same "if you keep this up" logic the
               list rows already use, so both reads consistently. */}
-          <Card className="overflow-hidden">
+          {/* Long-term card carries a tinted background so it's visually distinct
+              from the goal card (which stays plain white) without needing a
+              second hue — same theme color, applied as a soft tint. */}
+          <Card className={`overflow-hidden border-transparent ${longBgTint}`}>
             <button className="w-full text-left" onClick={() => setLongTermDetailOpen(true)}>
               {/* Same right-pad trick as the goal card so the In 30Y column ends
                   at the same x as the records list above. */}
               <CardContent className="pl-4 pr-[31px] py-4 space-y-2">
                 <div className="flex items-start gap-3">
                   <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
-                    <PiggyBank className={`h-4 w-4 flex-shrink-0 ${longAccent}`} strokeWidth={1.5} />
+                    <PiggyBank className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
                     <span className="text-sm font-semibold truncate">
                       {lang === "ko" ? "장기" : "Long-term"}
                     </span>
@@ -2083,7 +2086,7 @@ export default function App() {
                       0,
                     )
                     return (
-                      <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${longAccent}`}>
+                      <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${theme.textAccent}`}>
                         {fmt(lumpPart + streamPart)}
                       </div>
                     )
