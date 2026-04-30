@@ -131,14 +131,23 @@ const themes: Record<ThemeColor, {
   // CSS var values (no hsl() wrapper)
   primaryHsl: string        // e.g. "38 92% 50%"
   primaryFgHsl: string      // e.g. "0 0% 0%"  (text on top of primary bg)
-  // Tailwind classes for accent text (numbers like gain, projections)
-  textAccent: string        // e.g. "text-amber-600 dark:text-amber-400"
+  // Same hue shaded variants used to keep the whole app on one palette:
+  //  - textAccent:       full intensity, used for primary numbers / icons
+  //  - textAccentMuted:  ~60% intensity, used for the long-term bucket (so
+  //                      short-term and long-term differ in tone, not hue)
+  //  - bgAccent / bgMuted / bgTint: matching backgrounds for buttons,
+  //                      progress bars, and pill-style badges
+  textAccent: string
+  textAccentMuted: string
+  bgAccent: string
+  bgAccentMuted: string
+  bgTint: string
 }> = {
-  amber:   { label: "Amber",   dot: "bg-amber-400",   primaryHsl: "38 92% 50%",  primaryFgHsl: "0 0% 0%",    textAccent: "text-amber-600 dark:text-amber-400" },
-  blue:    { label: "Blue",    dot: "bg-blue-500",     primaryHsl: "217 91% 50%", primaryFgHsl: "0 0% 100%",  textAccent: "text-blue-600 dark:text-blue-400" },
-  emerald: { label: "Emerald", dot: "bg-emerald-500",  primaryHsl: "160 84% 35%", primaryFgHsl: "0 0% 100%",  textAccent: "text-emerald-600 dark:text-emerald-400" },
-  rose:    { label: "Rose",    dot: "bg-rose-500",     primaryHsl: "346 77% 52%", primaryFgHsl: "0 0% 100%",  textAccent: "text-rose-600 dark:text-rose-400" },
-  violet:  { label: "Violet",  dot: "bg-violet-500",   primaryHsl: "258 90% 58%", primaryFgHsl: "0 0% 100%",  textAccent: "text-violet-600 dark:text-violet-400" },
+  amber:   { label: "Amber",   dot: "bg-amber-400",    primaryHsl: "38 92% 50%",  primaryFgHsl: "0 0% 0%",    textAccent: "text-amber-600 dark:text-amber-400",    textAccentMuted: "text-amber-500/70 dark:text-amber-400/60",    bgAccent: "bg-amber-500",    bgAccentMuted: "bg-amber-400/60 dark:bg-amber-500/40",    bgTint: "bg-amber-100 dark:bg-amber-950/40" },
+  blue:    { label: "Blue",    dot: "bg-blue-500",     primaryHsl: "217 91% 50%", primaryFgHsl: "0 0% 100%",  textAccent: "text-blue-600 dark:text-blue-400",      textAccentMuted: "text-blue-500/70 dark:text-blue-400/60",      bgAccent: "bg-blue-500",     bgAccentMuted: "bg-blue-400/60 dark:bg-blue-500/40",     bgTint: "bg-blue-100 dark:bg-blue-950/40" },
+  emerald: { label: "Emerald", dot: "bg-emerald-500",  primaryHsl: "160 84% 35%", primaryFgHsl: "0 0% 100%",  textAccent: "text-emerald-600 dark:text-emerald-400",textAccentMuted: "text-emerald-500/70 dark:text-emerald-400/60",bgAccent: "bg-emerald-500",  bgAccentMuted: "bg-emerald-400/60 dark:bg-emerald-500/40",bgTint: "bg-emerald-100 dark:bg-emerald-950/40" },
+  rose:    { label: "Rose",    dot: "bg-rose-500",     primaryHsl: "346 77% 52%", primaryFgHsl: "0 0% 100%",  textAccent: "text-rose-600 dark:text-rose-400",      textAccentMuted: "text-rose-500/70 dark:text-rose-400/60",      bgAccent: "bg-rose-500",     bgAccentMuted: "bg-rose-400/60 dark:bg-rose-500/40",     bgTint: "bg-rose-100 dark:bg-rose-950/40" },
+  violet:  { label: "Violet",  dot: "bg-violet-500",   primaryHsl: "258 90% 58%", primaryFgHsl: "0 0% 100%",  textAccent: "text-violet-600 dark:text-violet-400",  textAccentMuted: "text-violet-500/70 dark:text-violet-400/60",  bgAccent: "bg-violet-500",   bgAccentMuted: "bg-violet-400/60 dark:bg-violet-500/40", bgTint: "bg-violet-100 dark:bg-violet-950/40" },
 }
 
 const i18n = {
@@ -390,13 +399,15 @@ export default function App() {
 
   const t = i18n[lang]
   const theme = themes[themeColor]
-  // Bucket colors are intentionally fixed (independent of the user's theme
-  // pick). Short-term = orange (warm, "treasure"), long-term = emerald
-  // (growth). Theme color still drives the rest of the app — buttons, FAB,
-  // sign-in icon, etc.
-  const goalAccent = "text-orange-600 dark:text-orange-400"
-  const goalBg = "bg-orange-500"
-  const goalBgTint = "bg-orange-100 dark:bg-orange-900/30"
+  // Buckets share a single hue (the user's theme) but differ in intensity:
+  // short-term = full theme accent, long-term = same hue muted. Keeps the
+  // page from looking like a rainbow while still distinguishing the two.
+  const goalAccent = theme.textAccent
+  const goalBg = theme.bgAccent
+  const goalBgTint = theme.bgTint
+  const longAccent = theme.textAccentMuted
+  const longBg = theme.bgAccentMuted
+  const longBgTint = theme.bgTint
 
   // Gate the save effect: don't overwrite localStorage until initial load has finished.
   // Otherwise the mount-time save (with default empty state) clobbers whatever load/sync just set.
@@ -1733,7 +1744,7 @@ export default function App() {
                             <Check className="h-3 w-3 text-white" strokeWidth={3} />
                           </span>
                         ) : item.destination === "long" ? (
-                          <span className="h-4 w-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${longBg}`}>
                             <Check className="h-3 w-3 text-white" strokeWidth={3} />
                           </span>
                         ) : (
@@ -2056,7 +2067,7 @@ export default function App() {
               <CardContent className="pl-4 pr-[31px] py-4 space-y-2">
                 <div className="flex items-start gap-3">
                   <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
-                    <PiggyBank className="h-4 w-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
+                    <PiggyBank className={`h-4 w-4 flex-shrink-0 ${longAccent}`} strokeWidth={1.5} />
                     <span className="text-sm font-semibold truncate">
                       {lang === "ko" ? "장기" : "Long-term"}
                     </span>
@@ -2072,7 +2083,7 @@ export default function App() {
                       0,
                     )
                     return (
-                      <div key={h} className="w-14 text-right text-sm font-bold leading-5 text-emerald-600 dark:text-emerald-400">
+                      <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${longAccent}`}>
                         {fmt(lumpPart + streamPart)}
                       </div>
                     )
@@ -2210,7 +2221,7 @@ export default function App() {
                   {/* Header */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <PiggyBank className="h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
+                      <PiggyBank className={`h-5 w-5 flex-shrink-0 ${longAccent}`} strokeWidth={1.5} />
                       <span className="font-bold text-base truncate">{lang === "ko" ? "장기 저축" : "Long-term savings"}</span>
                     </div>
                   </div>
@@ -2218,7 +2229,7 @@ export default function App() {
                   <div className="space-y-1">
                     <div className="flex items-baseline justify-between">
                       <span className="text-2xl font-extrabold">{fmt(verifiedBalances.longBalance)}</span>
-                      <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                      <span className={`text-sm font-medium ${longAccent}`}>
                         {lang === "ko" ? `30년 후: ${fmt(projection)}` : `In 30Y: ${fmt(projection)}`}
                       </span>
                     </div>
@@ -2258,7 +2269,7 @@ export default function App() {
                                 <span className="text-sm font-semibold truncate">{r2.name}</span>
                                 <span className="text-xs text-muted-foreground whitespace-nowrap">{fmt(r2.usdAmt)}{suffix}</span>
                               </span>
-                              <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                              <span className={`text-sm font-medium whitespace-nowrap ${longAccent}`}>
                                 {fmt(total)}
                               </span>
                             </div>
@@ -2617,9 +2628,9 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => setDest("long")}
-                          className={`${baseBtn} ${dest === "long" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30" : "border-border hover:bg-muted/50"}`}
+                          className={`${baseBtn} ${dest === "long" ? `border-foreground/30 ${longBgTint}` : "border-border hover:bg-muted/50"}`}
                         >
-                          <span className={`h-3 w-3 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 ${dest === "long" ? "" : "opacity-50"}`}>
+                          <span className={`h-3 w-3 rounded-full ${longBg} flex items-center justify-center flex-shrink-0 ${dest === "long" ? "" : "opacity-50"}`}>
                             {dest === "long" && <Check className="h-2 w-2 text-white" strokeWidth={3} />}
                           </span>
                           {lang === "ko" ? "장기" : "Long-term"}
@@ -2768,9 +2779,9 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => choose("long")}
-                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors text-left ${currentDest === "long" ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-border"}`}
+                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-foreground/30 hover:${longBgTint} transition-colors text-left ${currentDest === "long" ? `border-foreground/30 ${longBgTint}` : "border-border"}`}
                     >
-                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                      <span className={`flex h-10 w-10 items-center justify-center rounded-full ${longBgTint} ${longAccent} flex-shrink-0`}>
                         <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
                       </span>
                       <div className="flex-1 min-w-0">
@@ -2781,7 +2792,7 @@ export default function App() {
                           {lang === "ko" ? "투자/은퇴용" : "Investment / retirement"}
                         </div>
                       </div>
-                      {currentDest === "long" && <Check className="h-4 w-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={3} />}
+                      {currentDest === "long" && <Check className={`h-4 w-4 flex-shrink-0 ${longAccent}`} strokeWidth={3} />}
                     </button>
                     {/* Lets the user un-mark a transfer without first closing the modal — useful
                         when correcting a mistaken Goal/Long pick on the same row. */}
