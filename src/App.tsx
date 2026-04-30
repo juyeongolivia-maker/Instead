@@ -1957,7 +1957,10 @@ export default function App() {
             return (
               <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
                 <button className="w-full text-left" onClick={() => setGoalDetailOpen(true)}>
-                  <CardContent className="p-4 space-y-2">
+                  {/* Right-pad bumped to ~31px (16 normal + 15 phantom scrollbar gutter)
+                      so the In 30Y column ends at the same x as the records list above,
+                      which reserves real scrollbar gutter inside its own card. */}
+                  <CardContent className="pl-4 pr-[31px] py-4 space-y-2">
                     {/* Top row mirrors the records list's columns exactly:
                         name (flex-1) | Now (w-20: balance / target) | In 30Y (w-14: FV). */}
                     <div className="flex items-start gap-3">
@@ -1969,7 +1972,7 @@ export default function App() {
                         </span>
                       </div>
                       <div className="w-20 text-right">
-                        <div className="text-sm font-bold leading-5">{fmt(committed)}</div>
+                        <div className="text-xs font-semibold leading-5">{fmt(committed)}</div>
                         <div className="text-xs text-muted-foreground leading-4">/ {fmt(goal.targetUsd)}</div>
                       </div>
                       {horizons.map(h => (
@@ -2041,7 +2044,9 @@ export default function App() {
               list rows already use, so both reads consistently. */}
           <Card className="overflow-hidden">
             <button className="w-full text-left" onClick={() => setLongTermDetailOpen(true)}>
-              <CardContent className="p-4 space-y-2">
+              {/* Same right-pad trick as the goal card so the In 30Y column ends
+                  at the same x as the records list above. */}
+              <CardContent className="pl-4 pr-[31px] py-4 space-y-2">
                 <div className="flex items-start gap-3">
                   <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
                     <PiggyBank className="h-4 w-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
@@ -2050,7 +2055,7 @@ export default function App() {
                     </span>
                   </div>
                   <div className="w-20 text-right">
-                    <div className="text-sm font-bold leading-5">{fmt(verifiedBalances.longBalance)}</div>
+                    <div className="text-xs font-semibold leading-5">{fmt(verifiedBalances.longBalance)}</div>
                   </div>
                   {horizons.map(h => {
                     const r = parseFloat(rate) || 10
