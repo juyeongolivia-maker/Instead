@@ -1985,7 +1985,7 @@ export default function App() {
                       />
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{goal.account || (lang === "ko" ? "계좌 추가하기" : "Add account")}</span>
+                      <span>{goal.account || (lang === "ko" ? "계좌 별명 추가" : "Add nickname")}</span>
                       {isAchieved ? (
                         <span className={`font-semibold ${theme.textAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
                       ) : goal.deadline && daysLeft !== null ? (() => {
@@ -2067,7 +2067,7 @@ export default function App() {
                   })}
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{longTermAccount || (lang === "ko" ? "계좌 추가하기" : "Add account")}</span>
+                  <span>{longTermAccount || (lang === "ko" ? "계좌 별명 추가" : "Add nickname")}</span>
                   <span>{lang === "ko" ? "현재 패턴 유지 시" : "If kept up"}</span>
                 </div>
               </CardContent>
@@ -2217,7 +2217,7 @@ export default function App() {
                   {/* Account info */}
                   {longTermAccount && (
                     <div className="rounded-lg bg-muted/50 p-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "계좌" : "Account"}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "계좌 별명" : "Account nickname"}</p>
                       <p className="text-sm font-medium mt-0.5">{longTermAccount}</p>
                     </div>
                   )}
@@ -2350,7 +2350,7 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">
-                    {lang === "ko" ? "계좌 (선택)" : "Account (optional)"}
+                    {lang === "ko" ? "계좌 별명 (선택)" : "Account nickname (optional)"}
                   </Label>
                   <Input
                     type="text"
@@ -2360,7 +2360,7 @@ export default function App() {
                     id="goal-account-input"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    {lang === "ko" ? "계좌번호 전체는 적지 마세요" : "Don't enter the full account number"}
+                    {lang === "ko" ? "예: \"토스 적금\" — 계좌번호는 적지 마세요" : "e.g. \"Toss Savings\" — never enter full account numbers"}
                   </p>
                 </div>
                 {/* Shared-goal checkbox (Phase 1: UI scaffold; Phase 2 will wire invite flow) */}
@@ -2679,7 +2679,7 @@ export default function App() {
                 </p>
                 <div className="space-y-1">
                   <Label className="text-xs">
-                    {lang === "ko" ? "계좌 (선택)" : "Account (optional)"}
+                    {lang === "ko" ? "계좌 별명 (선택)" : "Account nickname (optional)"}
                   </Label>
                   <Input
                     autoFocus
@@ -2690,7 +2690,7 @@ export default function App() {
                     id="lt-account-input"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    {lang === "ko" ? "계좌번호 전체는 적지 마세요" : "Don't enter the full account number"}
+                    {lang === "ko" ? "예: \"토스 적금\" — 계좌번호는 적지 마세요" : "e.g. \"Toss Savings\" — never enter full account numbers"}
                   </p>
                 </div>
                 <div className="flex gap-2 pt-2">
