@@ -1739,21 +1739,16 @@ export default function App() {
                         className="w-5 flex items-center justify-center pt-1"
                         aria-label={item.verified ? (lang === "ko" ? "이체 변경" : "Change destination") : (lang === "ko" ? "이체 표시" : "Mark moved")}
                       >
-                        {/* Tag tells the user where this row's money went by mirroring
-                            the destination card's own icon: goal tag uses the goal's
-                            GoalIcon (✈ / 🏠 / etc), long tag uses PiggyBank. Same
-                            theme color on both so they visually belong to one palette. */}
-                        {item.destination === "goal" ? (
-                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${theme.bgAccent}`}>
-                            {(() => {
-                              const RowGoalIcon = goal ? (goalIcons[goal.iconKey] ?? Target) : Target
-                              return <RowGoalIcon className="h-2.5 w-2.5 text-white" strokeWidth={2.5} />
-                            })()}
-                          </span>
-                        ) : item.destination === "long" ? (
-                          <span className={`h-4 w-4 rounded-full flex items-center justify-center ${theme.bgAccent}`}>
-                            <PiggyBank className="h-2.5 w-2.5 text-white" strokeWidth={2} />
-                          </span>
+                        {/* Destination tag mirrors the bucket card's icon: goal uses
+                            the goal's GoalIcon (✈ / 🏠 / etc), long uses PiggyBank.
+                            Hue matches the buckets — goal at full accent, long at the
+                            muted variant — so the row tags read at a glance without a
+                            heavy filled circle behind them. */}
+                        {item.destination === "goal" ? (() => {
+                          const RowGoalIcon = goal ? (goalIcons[goal.iconKey] ?? Target) : Target
+                          return <RowGoalIcon className={`h-[18px] w-[18px] ${goalAccent}`} strokeWidth={2} />
+                        })() : item.destination === "long" ? (
+                          <PiggyBank className={`h-[18px] w-[18px] ${longAccent}`} strokeWidth={2} />
                         ) : (
                           <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 hover:border-muted-foreground/60 transition-colors" />
                         )}
