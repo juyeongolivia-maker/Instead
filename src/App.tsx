@@ -1461,12 +1461,6 @@ export default function App() {
               so the comparison reads as "this vs the others" at a glance. */}
           {records.length > 0 && (() => {
             const maxSaved = Math.max(...sixMonthBars.map(b => b.saved), 1)
-            // Peak month: the bar with the highest saved value. If multiple
-            // months tie, pick the most recent so the label sits to the right.
-            let peakIdx = 0
-            sixMonthBars.forEach((b, i) => {
-              if (b.saved >= sixMonthBars[peakIdx].saved) peakIdx = i
-            })
             const currentIdx = sixMonthBars.findIndex(
               b => b.year === viewMonth.year && b.month === viewMonth.month,
             )
@@ -1493,7 +1487,6 @@ export default function App() {
                   <div className="flex items-end gap-1.5 h-24">
                     {sixMonthBars.map((bar, i) => {
                       const isCurrent = i === currentIdx
-                      const isPeak = i === peakIdx && bar.saved > 0
                       // Reserve a hairline at the bottom for empty months so
                       // every month is still tappable (the bar's a button).
                       const heightPct = bar.saved > 0
@@ -1507,10 +1500,10 @@ export default function App() {
                           className="flex-1 flex flex-col items-center justify-end gap-1 h-full bg-transparent border-0 p-0 m-0 group"
                           aria-label={`${monthShort(bar.month)} ${bar.year}`}
                         >
-                          {/* Floating label above the bar — only the peak and
-                              current month show numbers so the chart stays
-                              clean. If they're the same bar, render once. */}
-                          {(isCurrent || isPeak) && bar.saved > 0 ? (
+                          {/* Every bar shows its month total above it. The current
+                              viewMonth gets bold theme color; others stay muted so
+                              the eye still anchors on "this month vs the rest". */}
+                          {bar.saved > 0 ? (
                             <span className={`text-[9px] leading-none whitespace-nowrap ${isCurrent ? `font-bold ${theme.textAccent}` : "text-muted-foreground"}`}>
                               {fmt(bar.saved)}
                             </span>
