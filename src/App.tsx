@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -526,6 +526,59 @@ export default function App() {
     })
     return { enriched, monthSaved, horizonSums }
   }, [records, rate, viewMonth, horizons])
+
+  // Six-month bar series ending at viewMonth — what the user "saved" each
+  // calendar month, computed from the records list. Recurring records prorate
+  // through contributionForMonth (same helper the row totals use), so daily
+  // and weekly habits get partial-month accuracy in their start/end months.
+  const sixMonthBars = useMemo(() => {
+    const out: { year: number; month: number; saved: number }[] = []
+    for (let offset = 5; offset >= 0; offset--) {
+      const abs = viewMonth.year * 12 + viewMonth.month - offset
+      const y = Math.floor(abs / 12)
+      const m = ((abs % 12) + 12) % 12
+      let saved = 0
+      records.forEach(rec => {
+        const sd = new Date(rec.date)
+        const sy = sd.getFullYear()
+        const sm = sd.getMonth()
+        if (rec.type !== "recurring") {
+          if (sy === y && sm === m) saved += rec.usdAmt
+          return
+        }
+        const sabs = sy * 12 + sm
+        if (abs < sabs) return
+        const endTs = getEndDate(rec)
+        if (endTs !== undefined && new Date(y, m, 1).getTime() >= endTs) return
+        const freq = rec.freq ?? 12
+        saved += contributionForMonth(rec.usdAmt, freq, rec.date, y, m, endTs)
+      })
+      out.push({ year: y, month: m, saved })
+    }
+    return out
+  }, [records, viewMonth])
+
+  // Swipe-to-navigate the monthly chart: track touch start, compare to end,
+  // shift viewMonth by ±1 if horizontal travel exceeds threshold. The threshold
+  // is tight enough that a tap on a bar still registers as a click (no swipe).
+  const chartSwipeStartX = useRef<number | null>(null)
+  const onChartTouchStart = (e: React.TouchEvent) => {
+    chartSwipeStartX.current = e.touches[0].clientX
+  }
+  const onChartTouchEnd = (e: React.TouchEvent) => {
+    const start = chartSwipeStartX.current
+    chartSwipeStartX.current = null
+    if (start === null) return
+    const dx = e.changedTouches[0].clientX - start
+    if (Math.abs(dx) < 40) return
+    setViewMonth(prev => {
+      // Swipe right → older month; swipe left → newer month
+      const dir = dx > 0 ? -1 : 1
+      const abs = prev.year * 12 + prev.month + dir
+      return { year: Math.floor(abs / 12), month: ((abs % 12) + 12) % 12 }
+    })
+  }
+  const goToMonth = (year: number, month: number) => setViewMonth({ year, month })
 
   function fmt(usd: number) {
     if (currency === "KRW") {
@@ -1401,6 +1454,92 @@ export default function App() {
               </CardContent>
             </Card>
           ) : null}
+
+          {/* Six-month bar chart — tap a bar to jump to that month, swipe
+              horizontally to shift the window by one month at a time. The
+              current viewMonth gets full theme color; other months are tinted
+              so the comparison reads as "this vs the others" at a glance. */}
+          {records.length > 0 && (() => {
+            const maxSaved = Math.max(...sixMonthBars.map(b => b.saved), 1)
+            // Peak month: the bar with the highest saved value. If multiple
+            // months tie, pick the most recent so the label sits to the right.
+            let peakIdx = 0
+            sixMonthBars.forEach((b, i) => {
+              if (b.saved >= sixMonthBars[peakIdx].saved) peakIdx = i
+            })
+            const currentIdx = sixMonthBars.findIndex(
+              b => b.year === viewMonth.year && b.month === viewMonth.month,
+            )
+            const monthShort = (m: number) => lang === "ko"
+              ? `${m + 1}월`
+              : new Date(2000, m, 1).toLocaleDateString("en-US", { month: "short" })
+            return (
+              <Card className="overflow-hidden">
+                <CardContent
+                  className="px-4 pt-3 pb-2 select-none"
+                  onTouchStart={onChartTouchStart}
+                  onTouchEnd={onChartTouchEnd}
+                >
+                  <div className="flex items-baseline justify-between mb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {lang === "ko" ? "월별 저축" : "Monthly savings"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {lang === "ko" ? "막대 탭 또는 좌우로 밀기" : "Tap or swipe"}
+                    </p>
+                  </div>
+                  {/* Bars + month labels in a flex grid so the SVG and the
+                      text labels stay perfectly aligned even at narrow widths. */}
+                  <div className="flex items-end gap-1.5 h-24">
+                    {sixMonthBars.map((bar, i) => {
+                      const isCurrent = i === currentIdx
+                      const isPeak = i === peakIdx && bar.saved > 0
+                      // Reserve a hairline at the bottom for empty months so
+                      // every month is still tappable (the bar's a button).
+                      const heightPct = bar.saved > 0
+                        ? Math.max(8, (bar.saved / maxSaved) * 100)
+                        : 2
+                      return (
+                        <button
+                          key={`${bar.year}-${bar.month}`}
+                          type="button"
+                          onClick={() => goToMonth(bar.year, bar.month)}
+                          className="flex-1 flex flex-col items-center justify-end gap-1 h-full bg-transparent border-0 p-0 m-0 group"
+                          aria-label={`${monthShort(bar.month)} ${bar.year}`}
+                        >
+                          {/* Floating label above the bar — only the peak and
+                              current month show numbers so the chart stays
+                              clean. If they're the same bar, render once. */}
+                          {(isCurrent || isPeak) && bar.saved > 0 ? (
+                            <span className={`text-[9px] leading-none whitespace-nowrap ${isCurrent ? `font-bold ${theme.textAccent}` : "text-muted-foreground"}`}>
+                              {fmt(bar.saved)}
+                            </span>
+                          ) : <span className="text-[9px] leading-none">&nbsp;</span>}
+                          <span
+                            className={`w-full rounded-t-sm transition-colors ${isCurrent ? theme.bgAccent : "bg-muted-foreground/20 group-hover:bg-muted-foreground/30"}`}
+                            style={{ height: `${heightPct}%` }}
+                          />
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="flex items-end gap-1.5 mt-1">
+                    {sixMonthBars.map((bar, i) => {
+                      const isCurrent = i === currentIdx
+                      return (
+                        <span
+                          key={`lbl-${bar.year}-${bar.month}`}
+                          className={`flex-1 text-center text-[10px] ${isCurrent ? `font-bold ${theme.textAccent}` : "text-muted-foreground"}`}
+                        >
+                          {monthShort(bar.month)}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })()}
 
           {/* Edit modal */}
           {editingRecord && (
