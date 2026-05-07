@@ -2596,7 +2596,7 @@ export default function App() {
                 <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
                   <div>
                     <p className="font-semibold">
-                      {lang === "ko" ? "어디로 옮겼어요?" : "Where did it go?"}
+                      {lang === "ko" ? "대신 저축 — 어디로?" : "Saved instead — where?"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1 truncate">
                       {r.name}{r.type === "recurring" ? ` · ${monthLabel}` : ""}
