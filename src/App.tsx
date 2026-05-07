@@ -583,9 +583,14 @@ export default function App() {
   function fmt(usd: number) {
     if (currency === "KRW") {
       const won = Math.round(usd * krwRate)
-      // Switch to 억 at 1000만 (=0.1억) so values never grow past 3 digits in front
-      // of the 만/억 suffix — keeps them inside the narrow 30Y / Now columns.
-      if (won >= 10000000) return `₩${(won / 100000000).toFixed(1)}억`
+      // Three tiers, all kept short so the Korean characters (만/억, both
+      // wider than ASCII) still fit the narrow Now / 30Y columns:
+      //   ≥ 10억      → ₩12억  (no decimal — 10 이상은 0.x 자리 무의미)
+      //   1억-9.99억  → ₩1.4억 (decimal helps differentiate 1.4 vs 9.9)
+      //   1000만-9999만 → ₩88만 (no decimal — already integer 만)
+      //   < 1000만    → ₩6,200 (full thousand-grouped won)
+      if (won >= 1000000000) return `₩${Math.round(won / 100000000)}억`
+      if (won >= 100000000) return `₩${(won / 100000000).toFixed(1)}억`
       if (won >= 10000) return `₩${Math.round(won / 10000)}만`
       return `₩${won.toLocaleString("ko-KR")}`
     }
@@ -1418,7 +1423,7 @@ export default function App() {
                           : item.fvByHorizon[h]
                         return (
                           <div key={h} className={`w-14 text-right ${theme.textAccent}`}>
-                            <div className="text-xs font-medium leading-5">{fmt(headlineFv)}</div>
+                            <div className="text-xs font-medium leading-5 whitespace-nowrap">{fmt(headlineFv)}</div>
                           </div>
                         )
                       })}
@@ -1435,11 +1440,11 @@ export default function App() {
                     <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {lang === "ko" ? "이 달 합계" : "Month total"}
                     </span>
-                    <div className="w-20 text-right text-sm font-bold leading-5">
+                    <div className="w-20 text-right text-sm font-bold leading-5 whitespace-nowrap">
                       {fmt(historySummary.monthSaved)}
                     </div>
                     {horizons.map(h => (
-                      <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${theme.textAccent}`}>
+                      <div key={h} className={`w-14 text-right text-sm font-bold leading-5 whitespace-nowrap ${theme.textAccent}`}>
                         {fmt(historySummary.horizonSums[h])}
                       </div>
                     ))}
