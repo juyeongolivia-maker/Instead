@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, Target, Plane, Home, Car, GraduationCap, Heart, PiggyBank, LogIn, LogOut, Calendar, List, Tag, Pencil } from "lucide-react"
+import { Wallet, Plus, ArrowLeft, Settings, Coffee, ShoppingBag, Shirt, Utensils, Tv, ShoppingCart, UtensilsCrossed, X, ChevronLeft, ChevronRight, ChevronDown, Check, LogIn, LogOut, Calendar, List, Tag, Pencil } from "lucide-react"
 import { useAuth } from "@/lib/useAuth"
 import { useCloudSync } from "@/lib/useCloudSync"
 import type { LucideIcon } from "lucide-react"
@@ -30,19 +30,7 @@ type RecordItem = {
   endYear?: number
   endMonth?: number // 0-11
   endDate?: number
-  // "I actually moved this money" tracking. Once items use a single bool;
-  // recurring items track per-month with "YYYY-MM" keys (each month is a
-  // separate transfer to verify).
-  verified?: boolean                                  // legacy (read-only after migration)
-  verifiedMonths?: string[]                            // legacy (read-only after migration)
-  // Each verified transfer carries a destination bucket: "goal" (toward the
-  // active short-term goal) or "long" (long-term savings). New writes use the
-  // *To fields; legacy values are read as "long" by getVerifiedDestination.
-  verifiedTo?: Destination
-  verifiedMonthsTo?: { [monthKey: string]: Destination }
 }
-
-type Destination = "goal" | "long"
 
 // Effective end timestamp for a recurring record. Prefers the precise endDate;
 // falls back to start-of-(endYear, endMonth) for older records that only
@@ -53,55 +41,6 @@ function getEndDate(r: RecordItem): number | undefined {
     return new Date(r.endYear, r.endMonth, 1).getTime()
   }
   return undefined
-}
-
-function monthKey(year: number, month: number) {
-  return `${year}-${String(month + 1).padStart(2, "0")}`
-}
-
-// Returns the bucket the user moved this month's contribution into, or null
-// if not verified yet. Reads the new *To fields first; falls back to the
-// legacy boolean/array (treated as "long" — the safer migration default).
-function getVerifiedDestination(r: RecordItem, viewYear: number, viewMonth: number): Destination | null {
-  if (r.type !== "recurring") {
-    if (r.verifiedTo) return r.verifiedTo
-    if (r.verified) return "long"
-    return null
-  }
-  const key = monthKey(viewYear, viewMonth)
-  const fromMap = r.verifiedMonthsTo?.[key]
-  if (fromMap) return fromMap
-  if ((r.verifiedMonths ?? []).includes(key)) return "long"
-  return null
-}
-
-type GoalIconKey = "plane" | "home" | "car" | "grad" | "heart" | "piggy" | "target"
-const goalIcons: Record<GoalIconKey, LucideIcon> = {
-  plane: Plane,
-  home: Home,
-  car: Car,
-  grad: GraduationCap,
-  heart: Heart,
-  piggy: PiggyBank,
-  target: Target,
-}
-
-type GoalType = "personal" | "shared"
-
-type Goal = {
-  id: string
-  name: string
-  iconKey: GoalIconKey
-  targetUsd: number
-  deadline?: number // timestamp, optional
-  createdAt: number
-  achievedAt?: number
-  // Phase 1: added for future shared-goal support. All existing goals default to "personal".
-  // Phase 2 will introduce memberIds/inviteToken + Firestore shared collection.
-  type?: GoalType
-  // Optional free-text account label (e.g. "Toss · ●●2345"). For user reference
-  // only — never store full account numbers; UI nudges users to use a partial.
-  account?: string
 }
 
 type CustomPreset = {
@@ -343,34 +282,15 @@ export default function App() {
   // otherwise the modal is in "add new" mode.
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<CustomPreset | null>(null)
-  // Goal detail modal — read-only progress + per-record contribution breakdown.
-  // Edit happens via a button inside this detail modal so a casual tap on the
-  // goal card no longer drops users into a write-mode form.
-  const [goalDetailOpen, setGoalDetailOpen] = useState(false)
-  // Long-term detail modal — same pattern as goal detail: tap card opens
-  // read-only contribution list; Edit button opens the account editor.
-  const [longTermDetailOpen, setLongTermDetailOpen] = useState(false)
   // Delete-confirmation modal — for recurring records the user picks the cutoff
   // date so weekly/daily records stop at the right occurrence, not just the
   // start of a month.
   const [deletingRecord, setDeletingRecord] = useState<RecordItem | null>(null)
-  // Verify destination modal — opens when the user toggles a transfer ON and
-  // a short-term goal exists, so they can pick whether the money went to the
-  // goal or to long-term savings.
-  const [verifyingRecord, setVerifyingRecord] = useState<RecordItem | null>(null)
-  // Free-text label for the long-term savings account (e.g. "Wealthfront · ●●1234").
-  // Stored alongside other app state in the save blob so it syncs across devices.
-  const [longTermAccount, setLongTermAccount] = useState<string>("")
-  // Whether the long-term account editor modal is open.
-  const [longTermAccountEditorOpen, setLongTermAccountEditorOpen] = useState(false)
   // Single-select horizon, kept as a 1-element array so downstream .map() code keeps
   // rendering a single column without a broader refactor.
   const [horizons, setHorizons] = useState<number[]>([10])
   const [examplesDismissed, setExamplesDismissed] = useState(false)
   const [horizonMenuOpen, setHorizonMenuOpen] = useState(false)
-  const [goal, setGoal] = useState<Goal | null>(null)
-  const [goalEditorOpen, setGoalEditorOpen] = useState(false)
-  const [goalTargetInvalid, setGoalTargetInvalid] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   // Auth + cloud sync (status not surfaced in UI; syncing runs silently)
   const auth = useAuth()
@@ -381,10 +301,6 @@ export default function App() {
       window.location.reload()
     },
   })
-  // Reset validation state whenever the goal editor closes
-  useEffect(() => {
-    if (!goalEditorOpen && goalTargetInvalid) setGoalTargetInvalid(false)
-  }, [goalEditorOpen, goalTargetInvalid])
   // Exchange rate (USD → KRW)
   const [krwRateSource, setKrwRateSource] = useState<"auto" | "manual">("auto")
   const [krwRateManual, setKrwRateManual] = useState<number>(KRW_RATE_FALLBACK)
@@ -399,16 +315,6 @@ export default function App() {
 
   const t = i18n[lang]
   const theme = themes[themeColor]
-  // Buckets share a single hue (the user's theme) but differ in intensity:
-  // short-term = full theme accent, long-term = same hue muted. Keeps the
-  // page from looking like a rainbow while still distinguishing the two.
-  const goalAccent = theme.textAccent
-  const goalBg = theme.bgAccent
-  const goalBgTint = theme.bgTint
-  const longAccent = theme.textAccentMuted
-  const longBg = theme.bgAccentMuted
-  const longBgTint = theme.bgTint
-
   // Gate the save effect: don't overwrite localStorage until initial load has finished.
   // Otherwise the mount-time save (with default empty state) clobbers whatever load/sync just set.
   const [hydrated, setHydrated] = useState(false)
@@ -445,7 +351,16 @@ export default function App() {
       if (p.rate) setRate(p.rate)
       if (p.frequency) setFrequency(p.frequency)
       if (p.years) setYears(p.years)
-      if (Array.isArray(p.records)) setRecords(p.records)
+      if (Array.isArray(p.records)) {
+        // Strip legacy bucket fields (verifiedTo / verifiedMonthsTo / verified /
+        // verifiedMonths) on load — the dual-bucket system was removed in 2026-05.
+        // See memory/project_buckets_removed.md for context.
+        setRecords(p.records.map((rec: Record<string, unknown>) => {
+          const { verifiedTo: _vt, verifiedMonthsTo: _vmt, verified: _v, verifiedMonths: _vm, ...rest } = rec
+          void _vt; void _vmt; void _v; void _vm
+          return rest as RecordItem
+        }))
+      }
       if (Array.isArray(p.horizons) && p.horizons.every((n: unknown) => typeof n === "number") && p.horizons.length > 0) {
         // Migrate legacy multi-select saves down to a single horizon.
         setHorizons([p.horizons[0] as number])
@@ -466,15 +381,7 @@ export default function App() {
           }))
         setCustomPresets(valid)
       }
-      if (typeof p.longTermAccount === "string") setLongTermAccount(p.longTermAccount)
       if (typeof p.examplesDismissed === "boolean") setExamplesDismissed(p.examplesDismissed)
-      if (p.goal && typeof p.goal === "object" && typeof p.goal.targetUsd === "number") {
-        // Validate iconKey, default to target if unknown
-        const icon = (p.goal.iconKey && goalIcons[p.goal.iconKey as GoalIconKey]) ? p.goal.iconKey : "target"
-        // Migrate legacy goals missing `type` → default to personal
-        const goalType: GoalType = p.goal.type === "shared" ? "shared" : "personal"
-        setGoal({ ...p.goal, iconKey: icon, type: goalType })
-      }
       if (p.krwRateSource === "manual" || p.krwRateSource === "auto") setKrwRateSource(p.krwRateSource)
       if (typeof p.krwRateManual === "number" && p.krwRateManual > 0) setKrwRateManual(p.krwRateManual)
       if (typeof p.krwRateAuto === "number" && p.krwRateAuto > 0) setKrwRateAuto(p.krwRateAuto)
@@ -491,10 +398,10 @@ export default function App() {
     if (auth.configured && !auth.user) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
-      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets, longTermAccount,
+      lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, customPresets,
       krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt,
     }))
-  }, [hydrated, auth.configured, auth.user, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, goal, customPresets, longTermAccount, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
+  }, [hydrated, auth.configured, auth.user, lang, currency, mode, isDark, themeColor, itemName, amount, rate, frequency, years, records, horizons, examplesDismissed, customPresets, krwRateSource, krwRateManual, krwRateAuto, krwRateAutoFetchedAt])
 
   // When Firebase is configured and user is signed out, ensure localStorage stays clean so that
   // the next sign-in pulls fresh data from Firestore instead of pushing stale local state up.
@@ -575,10 +482,8 @@ export default function App() {
       return true
     })
     let monthSaved = 0
-    let monthSavedVerified = 0
     const horizonSums: Record<number, number> = {}
-    const horizonSumsVerified: Record<number, number> = {}
-    horizons.forEach(h => { horizonSums[h] = 0; horizonSumsVerified[h] = 0 })
+    horizons.forEach(h => { horizonSums[h] = 0 })
     // Sort: by frequency rank primary (monthly→weekly→daily→once, so the heavier
     // monthly amounts lead for visual balance), then amount desc within each group
     // so bigger items float to the top. Date desc only as a final tiebreaker.
@@ -605,8 +510,6 @@ export default function App() {
         : item.usdAmt
       const fvByHorizon: Record<number, number> = {}
       const fvRecurringByHorizon: Record<number, number> = {}
-      const destination = getVerifiedDestination(item, viewMonth.year, viewMonth.month)
-      const verified = destination !== null
       horizons.forEach(h => {
         fvByHorizon[h] = fvLump(monthAmt, r, h)
         if (isRecurring) {
@@ -617,201 +520,12 @@ export default function App() {
         // once → one-time lump FV. Matches the single value now shown per row.
         const headline = isRecurring ? fvRecurringByHorizon[h] : fvByHorizon[h]
         horizonSums[h] += headline
-        if (verified) horizonSumsVerified[h] += headline
       })
       monthSaved += monthAmt
-      if (verified) monthSavedVerified += monthAmt
-      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt, verified, destination }
+      return { ...item, fvByHorizon, fvRecurringByHorizon, isRecurring, freq, monthAmt }
     })
-    return { enriched, monthSaved, monthSavedVerified, horizonSums, horizonSumsVerified }
+    return { enriched, monthSaved, horizonSums }
   }, [records, rate, viewMonth, horizons])
-
-  // Two totals for goal progress:
-  // - totalSaved: actually accumulated through the current calendar month (solid progress)
-  // - projectedByDeadline: totalSaved + committed contributions of active recurrings through deadline (ghost projection)
-  // Once items only count when their date ≤ horizon. Recurring items contribute monthAmt × active-months in [start, min(end, horizon+1)).
-  const savingsSummary = useMemo(() => {
-    const now = new Date()
-    const currentAbs = now.getFullYear() * 12 + now.getMonth()
-    // Last contributing month: a month counts if its first day precedes the deadline.
-    // e.g. deadline Sep 1 → last = Aug. Deadline Sep 30 → last = Sep. Deadline Sep 1 exactly → Aug.
-    let lastMonthAbs = currentAbs
-    if (goal?.deadline) {
-      const dl = new Date(goal.deadline)
-      const dlMonthAbs = dl.getFullYear() * 12 + dl.getMonth()
-      lastMonthAbs = dl.getDate() === 1 ? dlMonthAbs - 1 : dlMonthAbs
-    }
-    // If deadline has already passed, projection and actual converge
-    const horizonAbs = Math.max(currentAbs, lastMonthAbs)
-    const sumThrough = (throughAbsInclusive: number) => {
-      let total = 0
-      records.forEach(item => {
-        const d = new Date(item.date)
-        const startAbs = d.getFullYear() * 12 + d.getMonth()
-        const isRecurring = item.type === "recurring"
-        const freq = item.freq ?? (isRecurring ? 12 : 1)
-        if (!isRecurring) {
-          if (startAbs <= throughAbsInclusive) total += item.usdAmt
-          return
-        }
-        const endTs = getEndDate(item)
-        // Months whose first day is before endTs are still candidates for contribution.
-        // contributionForMonth itself prorates the partial end month.
-        const endAbsExclusive = endTs !== undefined
-          ? (() => {
-            const e = new Date(endTs)
-            const eAbs = e.getFullYear() * 12 + e.getMonth()
-            return e.getDate() === 1 ? eAbs : eAbs + 1
-          })()
-          : throughAbsInclusive + 1
-        const cap = Math.min(endAbsExclusive, throughAbsInclusive + 1)
-        for (let abs = startAbs; abs < cap; abs++) {
-          const y = Math.floor(abs / 12)
-          const m = abs % 12
-          total += contributionForMonth(item.usdAmt, freq, item.date, y, m, endTs)
-        }
-      })
-      return total
-    }
-    const totalSaved = sumThrough(currentAbs)
-    const projectedByDeadline = goal?.deadline ? sumThrough(horizonAbs) : totalSaved
-    return { totalSaved, projectedByDeadline }
-  }, [records, goal])
-  const totalSaved = savingsSummary.totalSaved
-  void totalSaved // historical: kept available for future displays that show all-records progress
-
-  // Actual balances by destination — sums the months/items the user has
-  // explicitly verified as moved to each bucket. These are "real" numbers
-  // (only counts confirmed transfers), distinct from totalSaved which counts
-  // every record regardless of verification.
-  const verifiedBalances = useMemo(() => {
-    const r = parseFloat(rate) || 10
-    void r // not used here; kept for parity with other useMemos that depend on rate
-    let goalBalance = 0
-    let longBalance = 0
-    records.forEach(item => {
-      const isRecurring = item.type === "recurring"
-      const freq = item.freq ?? (isRecurring ? 12 : 1)
-      if (!isRecurring) {
-        const dest = item.verifiedTo ?? (item.verified ? "long" : null)
-        if (dest === "goal") goalBalance += item.usdAmt
-        else if (dest === "long") longBalance += item.usdAmt
-        return
-      }
-      // Recurring: iterate every month the user has marked, sum that month's
-      // contribution into the right bucket.
-      const seen = new Set<string>()
-      const map = item.verifiedMonthsTo ?? {}
-      Object.entries(map).forEach(([key, dest]) => {
-        seen.add(key)
-        const [y, m] = key.split("-").map(Number)
-        const amt = contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
-        if (dest === "goal") goalBalance += amt
-        else if (dest === "long") longBalance += amt
-      })
-      // Legacy verifiedMonths array (no destination) → treat as "long"
-      ;(item.verifiedMonths ?? []).forEach(key => {
-        if (seen.has(key)) return
-        const [y, m] = key.split("-").map(Number)
-        const amt = contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
-        longBalance += amt
-      })
-    })
-    // Recurring records currently routed to long-term — used to project a
-    // "if this pattern continues" 30Y stream FV alongside the lump compound
-    // of the existing balance. Once-items aren't ongoing, so they don't add
-    // to the stream (only the lump portion via longBalance above).
-    const longStreamComponents: { annual: number; freq: number }[] = []
-    records.forEach(item => {
-      if (item.type !== "recurring") return
-      const dest = getVerifiedDestination(item, viewMonth.year, viewMonth.month)
-      if (dest !== "long") return
-      const freq = item.freq ?? 12
-      longStreamComponents.push({ annual: item.usdAmt * freq, freq })
-    })
-    return { goalBalance, longBalance, longStreamComponents }
-  }, [records, rate, viewMonth])
-
-  // Per-record contribution to the current goal. Mirrors sumThrough's logic but
-  // tallies per item so the goal-detail modal can list which records contribute
-  // most. Splits actual (already-saved) from committed (still-to-come this period).
-  // Per-record contribution to the active goal — but only counting transfers
-  // the user has actually verified as going to "goal". Records that exist but
-  // are unverified (or were sent to long-term) don't show up here.
-  const goalContributions = useMemo(() => {
-    if (!goal) return [] as { record: RecordItem; total: number }[]
-    const out = records.map(item => {
-      const isRecurring = item.type === "recurring"
-      const freq = item.freq ?? (isRecurring ? 12 : 1)
-      let total = 0
-      if (!isRecurring) {
-        if (item.verifiedTo === "goal") total = item.usdAmt
-      } else {
-        const map = item.verifiedMonthsTo ?? {}
-        Object.entries(map).forEach(([key, dest]) => {
-          if (dest !== "goal") return
-          const [y, m] = key.split("-").map(Number)
-          total += contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
-        })
-      }
-      return { record: item, total }
-    }).filter(r => r.total > 0)
-    const freqRank = (r: RecordItem) => {
-      if (r.type !== "recurring") return 3
-      if (r.freq === 12) return 0
-      if (r.freq === 52) return 1
-      return 2
-    }
-    out.sort((a, b) => {
-      const fd = freqRank(a.record) - freqRank(b.record)
-      if (fd !== 0) return fd
-      return b.total - a.total
-    })
-    return out
-  }, [records, goal])
-
-  // Per-record contribution to the long-term bucket — counts every month/item
-  // verified as routed to "long". Mirrors goalContributions so both detail
-  // modals can render the same list shape.
-  const longTermContributions = useMemo(() => {
-    const out = records.map(item => {
-      const isRecurring = item.type === "recurring"
-      const freq = item.freq ?? (isRecurring ? 12 : 1)
-      let total = 0
-      if (!isRecurring) {
-        const dest = item.verifiedTo ?? (item.verified ? "long" : null)
-        if (dest === "long") total = item.usdAmt
-      } else {
-        const map = item.verifiedMonthsTo ?? {}
-        const seen = new Set<string>()
-        Object.entries(map).forEach(([key, dest]) => {
-          seen.add(key)
-          if (dest !== "long") return
-          const [y, m] = key.split("-").map(Number)
-          total += contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
-        })
-        // Legacy verifiedMonths (no destination) → treat as long
-        ;(item.verifiedMonths ?? []).forEach(key => {
-          if (seen.has(key)) return
-          const [y, m] = key.split("-").map(Number)
-          total += contributionForMonth(item.usdAmt, freq, item.date, y, m - 1, getEndDate(item))
-        })
-      }
-      return { record: item, total }
-    }).filter(r => r.total > 0)
-    const freqRank = (r: RecordItem) => {
-      if (r.type !== "recurring") return 3
-      if (r.freq === 12) return 0
-      if (r.freq === 52) return 1
-      return 2
-    }
-    out.sort((a, b) => {
-      const fd = freqRank(a.record) - freqRank(b.record)
-      if (fd !== 0) return fd
-      return b.total - a.total
-    })
-    return out
-  }, [records])
 
   function fmt(usd: number) {
     if (currency === "KRW") {
@@ -859,28 +573,6 @@ export default function App() {
       setSaveFlash(false)
       setView("list")
     }, 800)
-  }
-
-  // Set (or clear) the destination for this record's transfer in the current
-  // viewMonth. dest=null clears the verification. Cleans up legacy fields so
-  // they don't shadow the new map-based storage.
-  function setRecordDestination(id: string, dest: Destination | null) {
-    setRecords(prev => prev.map(r => {
-      if (r.id !== id) return r
-      if (r.type !== "recurring") {
-        return {
-          ...r,
-          verifiedTo: dest ?? undefined,
-          verified: undefined, // drop legacy
-        }
-      }
-      const key = monthKey(viewMonth.year, viewMonth.month)
-      const map = { ...(r.verifiedMonthsTo ?? {}) }
-      if (dest) map[key] = dest
-      else delete map[key]
-      const cleanedLegacy = (r.verifiedMonths ?? []).filter(k => k !== key)
-      return { ...r, verifiedMonthsTo: map, verifiedMonths: cleanedLegacy }
-    }))
   }
 
   // Stop a recurring record from a chosen day onward. Past contributions remain
@@ -958,25 +650,6 @@ export default function App() {
     reader.readAsText(file)
   }
 
-  function saveGoal(input: { name: string; iconKey: GoalIconKey; targetUsd: number; deadline?: number; type: GoalType; account?: string }) {
-    setGoal(prev => {
-      if (prev) {
-        return { ...prev, ...input, achievedAt: undefined }
-      }
-      return {
-        id: crypto.randomUUID(),
-        createdAt: Date.now(),
-        ...input,
-      }
-    })
-    setGoalEditorOpen(false)
-  }
-
-  function deleteGoal() {
-    setGoal(null)
-    setGoalEditorOpen(false)
-  }
-
   // Fetch USD→KRW from a free API. Called on auto-refresh + manual refresh.
   async function fetchKrwRate() {
     setKrwRateFetching(true)
@@ -1003,17 +676,6 @@ export default function App() {
     if (stale) fetchKrwRate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [krwRateSource])
-
-  // Auto-mark goal as achieved when reached; clear if it falls back below (e.g., after deletions)
-  useEffect(() => {
-    if (!goal) return
-    const reached = totalSaved >= goal.targetUsd
-    if (reached && !goal.achievedAt) {
-      setGoal({ ...goal, achievedAt: Date.now() })
-    } else if (!reached && goal.achievedAt) {
-      setGoal({ ...goal, achievedAt: undefined })
-    }
-  }, [totalSaved, goal])
 
   const noteText = t.note.replace("{rate}", rate)
 
@@ -1645,7 +1307,6 @@ export default function App() {
                     Same gap + widths used in every row below so columns line up cleanly. */}
                 <div className="sticky top-0 z-10 flex items-center border-b border-border bg-background px-4 py-2 gap-3">
                   <span className="flex-1 text-xs font-semibold text-muted-foreground">{lang === "ko" ? "항목" : "Item"}</span>
-                  <span className="w-5 text-center text-xs font-semibold text-muted-foreground" aria-label={lang === "ko" ? "이체" : "Moved"}>✓</span>
                   <span className="w-20 text-right text-xs font-semibold text-muted-foreground">{lang === "ko" ? "현재" : "Now"}</span>
                   {horizons.map(h => (
                     <span key={h} className="w-14 text-right text-xs font-semibold text-muted-foreground">
@@ -1679,40 +1340,6 @@ export default function App() {
                           }`} />
                           <span className="text-sm font-semibold truncate">{item.name}</span>
                         </div>
-                      </button>
-                      {/* Verified toggle — tap to mark "I actually moved this money".
-                          Recurring tracks per-month, so the same row will reset to
-                          unverified when the user navigates to a different month. */}
-                      {/* Verified toggle. With a goal in play, every tap opens the
-                          destination modal so the user can switch between Goal /
-                          Long-term / Not moved without first un-marking. With no
-                          goal there's only one bucket — tap simply toggles long. */}
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation()
-                          if (goal) {
-                            setVerifyingRecord(item)
-                          } else {
-                            setRecordDestination(item.id, item.destination ? null : "long")
-                          }
-                        }}
-                        className="w-5 flex items-center justify-center pt-1"
-                        aria-label={item.verified ? (lang === "ko" ? "이체 변경" : "Change destination") : (lang === "ko" ? "이체 표시" : "Mark moved")}
-                      >
-                        {/* Destination tag mirrors the bucket card's icon: goal uses
-                            the goal's GoalIcon (✈ / 🏠 / etc), long uses PiggyBank.
-                            Hue matches the buckets — goal at full accent, long at the
-                            muted variant — so the row tags read at a glance without a
-                            heavy filled circle behind them. */}
-                        {item.destination === "goal" ? (() => {
-                          const RowGoalIcon = goal ? (goalIcons[goal.iconKey] ?? Target) : Target
-                          return <RowGoalIcon className={`h-[18px] w-[18px] ${goalAccent}`} strokeWidth={2} />
-                        })() : item.destination === "long" ? (
-                          <PiggyBank className={`h-[18px] w-[18px] ${longAccent}`} strokeWidth={2} />
-                        ) : (
-                          <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 hover:border-muted-foreground/60 transition-colors" />
-                        )}
                       </button>
                       {/* Now column: monthly (or entered if already monthly/once) on line 1,
                           entered unit in parens on line 2 for daily/weekly recurring.
@@ -1750,34 +1377,17 @@ export default function App() {
                     same effective width as the rows above — including the reserved
                     scrollbar gutter. Sticky-bottom keeps the month sum visible while the
                     user scrolls through a long list. */}
-                {/* Totals show two layers per cell: verified (bold dark) + pending (muted).
-                    Verified = items the user actually moved money for. Pending = the rest.
-                    Both add up to the all-records total. */}
                 <div className="sticky bottom-0 z-10 border-t-2 border-border bg-muted px-4 py-2.5">
-                  <div className="flex items-start gap-3">
-                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground self-center">
+                  <div className="flex items-center gap-3">
+                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {lang === "ko" ? "이 달 합계" : "Month total"}
                     </span>
-                    <div className="w-20 text-right">
-                      <div className="text-sm font-bold leading-5">
-                        {fmt(historySummary.monthSavedVerified)}
-                      </div>
-                      {historySummary.monthSaved > historySummary.monthSavedVerified && (
-                        <div className="text-[10px] text-muted-foreground leading-4">
-                          +{fmt(historySummary.monthSaved - historySummary.monthSavedVerified)}
-                        </div>
-                      )}
+                    <div className="w-20 text-right text-sm font-bold leading-5">
+                      {fmt(historySummary.monthSaved)}
                     </div>
                     {horizons.map(h => (
-                      <div key={h} className="w-14 text-right">
-                        <div className={`text-sm font-bold leading-5 ${theme.textAccent}`}>
-                          {fmt(historySummary.horizonSumsVerified[h])}
-                        </div>
-                        {historySummary.horizonSums[h] > historySummary.horizonSumsVerified[h] && (
-                          <div className="text-[10px] text-muted-foreground leading-4">
-                            +{fmt(historySummary.horizonSums[h] - historySummary.horizonSumsVerified[h])}
-                          </div>
-                        )}
+                      <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${theme.textAccent}`}>
+                        {fmt(historySummary.horizonSums[h])}
                       </div>
                     ))}
                   </div>
@@ -1791,507 +1401,6 @@ export default function App() {
               </CardContent>
             </Card>
           ) : null}
-
-          {/* Goal card (below the list so records read first; goal reads as the "why").
-              The horizon columns mirror the list's horizon checkboxes above — same state. */}
-          {goal ? (() => {
-            // Headline = actual money the user has confirmed moving into this goal.
-            // Records exist (and the month total counts them) without being committed to
-            // the goal — the bar should only fill from explicitly goal-tagged transfers.
-            const committed = verifiedBalances.goalBalance
-            const committedPct = Math.min(100, (committed / goal.targetUsd) * 100)
-            const isAchieved = !!goal.achievedAt
-            const GoalIcon = goalIcons[goal.iconKey] ?? Target
-            const goalRate = parseFloat(rate) || 10
-            // Deadline-based stats — only the bits the meta line actually uses now
-            // that the "+\$X/m needed" detail is dropped.
-            let daysLeft: number | null = null
-            let onTrack = false
-            if (goal.deadline) {
-              const msPerDay = 1000 * 60 * 60 * 24
-              daysLeft = Math.max(0, Math.ceil((goal.deadline - Date.now()) / msPerDay))
-              onTrack = committed >= goal.targetUsd
-            }
-            return (
-              <Card className={`overflow-hidden ${isAchieved ? "border-primary" : ""}`}>
-                <button className="w-full text-left" onClick={() => setGoalDetailOpen(true)}>
-                  {/* Right-pad bumped to ~31px (16 normal + 15 phantom scrollbar gutter)
-                      so the In 30Y column ends at the same x as the records list above,
-                      which reserves real scrollbar gutter inside its own card. */}
-                  <CardContent className="pl-4 pr-[31px] py-4 space-y-2">
-                    {/* Top row mirrors the records list's columns exactly:
-                        name (flex-1) | Now (w-20: balance / target) | In 30Y (w-14: FV). */}
-                    <div className="flex items-start gap-3">
-                      <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
-                        <GoalIcon className={`h-4 w-4 flex-shrink-0 ${goalAccent}`} strokeWidth={1.5} />
-                        <span className="text-sm truncate">
-                          <span className="font-semibold">{lang === "ko" ? "단기" : "Short-term"}</span>
-                          <span className="font-normal text-muted-foreground">: {goal.name}</span>
-                        </span>
-                      </div>
-                      <div className="w-20 text-right">
-                        <div className="text-sm font-bold leading-5">{fmt(committed)}</div>
-                        <div className="text-xs text-muted-foreground leading-4">/ {fmt(goal.targetUsd)}</div>
-                      </div>
-                      {horizons.map(h => (
-                        <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${goalAccent}`}>
-                          {fmt(fvLump(goal.targetUsd, goalRate, h))}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full rounded-full transition-all ${goalBg}`}
-                        style={{ width: `${committedPct}%` }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{goal.account || (lang === "ko" ? "계좌 별명 추가" : "Add nickname")}</span>
-                      {isAchieved ? (
-                        <span className={`font-semibold ${goalAccent}`}>{lang === "ko" ? "달성 ✓" : "Achieved ✓"}</span>
-                      ) : goal.deadline && daysLeft !== null ? (() => {
-                        const dl = new Date(goal.deadline)
-                        const dlLabel = lang === "ko"
-                          ? `${dl.getMonth() + 1}월 ${dl.getDate()}일`
-                          : dl.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                        // On-track/behind distinguished by the ✓ alone — drops the
-                        // "+\$X/m needed" detail since it cluttered the meta line.
-                        return onTrack ? (
-                          <span className={`font-semibold ${goalAccent}`}>
-                            {lang === "ko" ? `~${dlLabel} ✓` : `by ${dlLabel} ✓`}
-                          </span>
-                        ) : (
-                          <span>
-                            {lang === "ko" ? `~${dlLabel}` : `by ${dlLabel}`}
-                          </span>
-                        )
-                      })() : null}
-                    </div>
-                  </CardContent>
-                </button>
-              </Card>
-            )
-          })() : (
-            <Card className="border-dashed">
-              <button
-                className="w-full text-left"
-                onClick={() => setGoalEditorOpen(true)}
-              >
-                <CardContent className="p-4 flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${goalBgTint} ${goalAccent}`}>
-                    <Target className="h-5 w-5" strokeWidth={1.5} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm">
-                      {lang === "ko" ? "목표를 만들어보세요" : "Set a goal"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {lang === "ko" ? "스킵할 때마다 진행률이 쌓여요" : "Every skip fills your progress bar"}
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-                </CardContent>
-              </button>
-            </Card>
-          )}
-
-          {/* Long-term card — 3-column layout matches the records list and goal
-              card above. 30Y FV combines two stories: existing balance compounded
-              + ongoing pattern (recurring items currently routed to long-term)
-              continuing for the horizon. Same "if you keep this up" logic the
-              list rows already use, so both reads consistently. */}
-          {/* Long-term card carries a tinted background so it's visually distinct
-              from the goal card (which stays plain white) without needing a
-              second hue — same theme color, applied as a soft tint. */}
-          <Card className={`overflow-hidden border-transparent ${longBgTint}`}>
-            <button className="w-full text-left" onClick={() => setLongTermDetailOpen(true)}>
-              {/* Same right-pad trick as the goal card so the In 30Y column ends
-                  at the same x as the records list above. */}
-              <CardContent className="pl-4 pr-[31px] py-4 space-y-2">
-                <div className="flex items-start gap-3">
-                  <div className="flex flex-1 items-center gap-2 min-w-0 leading-5">
-                    <PiggyBank className={`h-4 w-4 flex-shrink-0 ${theme.textAccent}`} strokeWidth={1.5} />
-                    <span className="text-sm font-semibold truncate">
-                      {lang === "ko" ? "장기" : "Long-term"}
-                    </span>
-                  </div>
-                  <div className="w-20 text-right">
-                    <div className="text-sm font-bold leading-5">{fmt(verifiedBalances.longBalance)}</div>
-                  </div>
-                  {horizons.map(h => {
-                    const r = parseFloat(rate) || 10
-                    const lumpPart = fvLump(verifiedBalances.longBalance, r, h)
-                    const streamPart = verifiedBalances.longStreamComponents.reduce(
-                      (sum, c) => sum + fvRecurring(c.annual, r, h, c.freq),
-                      0,
-                    )
-                    return (
-                      <div key={h} className={`w-14 text-right text-sm font-bold leading-5 ${theme.textAccent}`}>
-                        {fmt(lumpPart + streamPart)}
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{longTermAccount || (lang === "ko" ? "계좌 별명 추가" : "Add nickname")}</span>
-                  <span>{lang === "ko" ? "현재 패턴 유지 시" : "If kept up"}</span>
-                </div>
-              </CardContent>
-            </button>
-          </Card>
-
-          {/* Goal detail modal — read-only progress + per-record contribution list.
-              Edit goes through the Edit button so a casual tap can't accidentally
-              start mutating fields. */}
-          {goalDetailOpen && goal && (() => {
-            // Same source as the outer card — only goal-tagged transfers count
-            // toward the headline progress, not every record on the books.
-            const committed = verifiedBalances.goalBalance
-            const committedPct = Math.min(100, (committed / goal.targetUsd) * 100)
-            const isAchieved = !!goal.achievedAt
-            const GoalIcon = goalIcons[goal.iconKey] ?? Target
-            let daysLeft: number | null = null
-            let onTrack = false
-            if (goal.deadline) {
-              const msPerDay = 1000 * 60 * 60 * 24
-              daysLeft = Math.max(0, Math.ceil((goal.deadline - Date.now()) / msPerDay))
-              onTrack = committed >= goal.targetUsd
-            }
-            return (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setGoalDetailOpen(false)}>
-                <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  {/* Header: name + status pill */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <GoalIcon className={`h-5 w-5 flex-shrink-0 ${goalAccent}`} strokeWidth={1.5} />
-                      <span className="font-bold text-base truncate">{goal.name}</span>
-                    </div>
-                    {isAchieved ? (
-                      <span className={`text-xs font-semibold ${goalAccent}`}>{lang === "ko" ? "달성 🎉" : "Achieved 🎉"}</span>
-                    ) : goal.deadline && daysLeft !== null ? (
-                      <span className={`text-xs font-semibold ${onTrack ? goalAccent : "text-muted-foreground"}`}>
-                        {onTrack ? (lang === "ko" ? "순조롭게 ✓" : "On track ✓") : (lang === "ko" ? "더 분발해야" : "Behind")}
-                      </span>
-                    ) : null}
-                  </div>
-                  {/* Big progress display */}
-                  <div className="space-y-2">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-2xl font-extrabold">{fmt(committed)}</span>
-                      <span className="text-sm text-muted-foreground">/ {fmt(goal.targetUsd)}</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                      <div className={`h-full rounded-full transition-all ${goalBg}`} style={{ width: `${committedPct}%` }} />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{committedPct.toFixed(0)}%</span>
-                      {goal.deadline && daysLeft !== null && (() => {
-                        const dl = new Date(goal.deadline)
-                        const dlLabel = lang === "ko"
-                          ? `${dl.getMonth() + 1}월 ${dl.getDate()}일`
-                          : dl.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                        return <span>{lang === "ko" ? `~${dlLabel}` : `by ${dlLabel}`}</span>
-                      })()}
-                    </div>
-                  </div>
-                  {/* Contribution list */}
-                  {goalContributions.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {lang === "ko" ? "기여 항목" : "Contributing items"}
-                      </p>
-                      <div className="space-y-1">
-                        {goalContributions.map(({ record: r, total }) => {
-                          const isRecurring = r.type === "recurring"
-                          const suffix = isRecurring
-                            ? (r.freq === 365 ? (lang === "ko" ? "/일" : "/d")
-                              : r.freq === 52 ? (lang === "ko" ? "/주" : "/w")
-                              : (lang === "ko" ? "/월" : "/m"))
-                            : ""
-                          const dotColor = !isRecurring ? "bg-amber-400"
-                            : r.freq === 365 ? "bg-emerald-400"
-                            : r.freq === 52 ? "bg-sky-400"
-                            : "bg-violet-400"
-                          const pct = (total / goal.targetUsd) * 100
-                          return (
-                            <div key={r.id} className="flex items-center justify-between gap-2 py-1">
-                              <span className="flex items-center gap-1.5 flex-1 min-w-0">
-                                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
-                                <span className="text-sm font-semibold truncate">{r.name}</span>
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">{fmt(r.usdAmt)}{suffix}</span>
-                              </span>
-                              <span className="text-right whitespace-nowrap">
-                                <span className={`text-sm font-medium ${goalAccent}`}>{fmt(total)}</span>
-                                <span className="text-[10px] text-muted-foreground ml-1">
-                                  {pct.toFixed(0)}%
-                                </span>
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-2">
-                    <Button variant="outline" className="flex-1" onClick={() => setGoalDetailOpen(false)}>
-                      {lang === "ko" ? "닫기" : "Close"}
-                    </Button>
-                    <Button className="flex-1" onClick={() => { setGoalDetailOpen(false); setGoalEditorOpen(true) }}>
-                      {lang === "ko" ? "편집" : "Edit"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Long-term detail modal — same shape as the goal detail: header,
-              balance + 30Y projection, contribution list, Edit button (which
-              opens the account editor). Mirroring the goal pattern means a
-              casual tap on either card behaves consistently. */}
-          {longTermDetailOpen && (() => {
-            const r = parseFloat(rate) || 10
-            const lumpPart = fvLump(verifiedBalances.longBalance, r, 30)
-            const streamPart = verifiedBalances.longStreamComponents.reduce(
-              (sum, c) => sum + fvRecurring(c.annual, r, 30, c.freq),
-              0,
-            )
-            const projection = lumpPart + streamPart
-            return (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setLongTermDetailOpen(false)}>
-                <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  {/* Header */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <PiggyBank className={`h-5 w-5 flex-shrink-0 ${longAccent}`} strokeWidth={1.5} />
-                      <span className="font-bold text-base truncate">{lang === "ko" ? "장기 저축" : "Long-term savings"}</span>
-                    </div>
-                  </div>
-                  {/* Balance + 30Y projection */}
-                  <div className="space-y-1">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-2xl font-extrabold">{fmt(verifiedBalances.longBalance)}</span>
-                      <span className={`text-sm font-medium ${longAccent}`}>
-                        {lang === "ko" ? `30년 후: ${fmt(projection)}` : `In 30Y: ${fmt(projection)}`}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      {lang === "ko" ? "현재 패턴 유지 시 (연 10% 복리 가정)" : "If kept up at current pace (10%/yr compound)"}
-                    </p>
-                  </div>
-                  {/* Account info */}
-                  {longTermAccount && (
-                    <div className="rounded-lg bg-muted/50 p-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang === "ko" ? "계좌 별명" : "Account nickname"}</p>
-                      <p className="text-sm font-medium mt-0.5">{longTermAccount}</p>
-                    </div>
-                  )}
-                  {/* Contributions list */}
-                  {longTermContributions.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {lang === "ko" ? "기여 항목" : "Contributing items"}
-                      </p>
-                      <div className="space-y-1">
-                        {longTermContributions.map(({ record: r2, total }) => {
-                          const isRecurring = r2.type === "recurring"
-                          const suffix = isRecurring
-                            ? (r2.freq === 365 ? (lang === "ko" ? "/일" : "/d")
-                              : r2.freq === 52 ? (lang === "ko" ? "/주" : "/w")
-                              : (lang === "ko" ? "/월" : "/m"))
-                            : ""
-                          const dotColor = !isRecurring ? "bg-amber-400"
-                            : r2.freq === 365 ? "bg-emerald-400"
-                            : r2.freq === 52 ? "bg-sky-400"
-                            : "bg-violet-400"
-                          return (
-                            <div key={r2.id} className="flex items-center justify-between gap-2 py-1">
-                              <span className="flex items-center gap-1.5 flex-1 min-w-0">
-                                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
-                                <span className="text-sm font-semibold truncate">{r2.name}</span>
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">{fmt(r2.usdAmt)}{suffix}</span>
-                              </span>
-                              <span className={`text-sm font-medium whitespace-nowrap ${longAccent}`}>
-                                {fmt(total)}
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-2">
-                    <Button variant="outline" className="flex-1" onClick={() => setLongTermDetailOpen(false)}>
-                      {lang === "ko" ? "닫기" : "Close"}
-                    </Button>
-                    <Button className="flex-1" onClick={() => { setLongTermDetailOpen(false); setLongTermAccountEditorOpen(true) }}>
-                      {lang === "ko" ? "편집" : "Edit"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Goal editor modal */}
-          {goalEditorOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setGoalEditorOpen(false)}>
-              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
-                <p className="font-semibold">
-                  {goal
-                    ? (lang === "ko" ? "목표 편집" : "Edit goal")
-                    : (lang === "ko" ? "새 목표" : "New goal")}
-                </p>
-                {/* Icon picker */}
-                <div className="space-y-1">
-                  <Label className="text-xs">{lang === "ko" ? "아이콘" : "Icon"}</Label>
-                  <div className="flex gap-1.5">
-                    {(Object.keys(goalIcons) as GoalIconKey[]).map(key => {
-                      const Icon = goalIcons[key]
-                      const selected = (goal?.iconKey ?? "target") === key
-                      return (
-                        <button
-                          key={key}
-                          id={`goal-icon-${key}`}
-                          type="button"
-                          onClick={() => {
-                            // toggle visual selection via DOM (we read final value on save)
-                            document.querySelectorAll("[data-goal-icon-btn]").forEach(el => el.removeAttribute("data-selected"))
-                            const el = document.getElementById(`goal-icon-${key}`)
-                            if (el) el.setAttribute("data-selected", "true")
-                          }}
-                          data-goal-icon-btn
-                          data-icon-key={key}
-                          data-selected={selected ? "true" : undefined}
-                          className="flex h-9 w-9 items-center justify-center rounded-md border border-border data-[selected=true]:border-primary data-[selected=true]:bg-primary/10 hover:bg-muted"
-                        >
-                          <Icon className="h-4 w-4" strokeWidth={1.5} />
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">{lang === "ko" ? "이름" : "Name"}</Label>
-                  <Input
-                    autoFocus
-                    defaultValue={goal?.name ?? ""}
-                    placeholder={lang === "ko" ? "예: 한국 여행" : "e.g. Korea trip"}
-                    maxLength={40}
-                    id="goal-name-input"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className={`text-xs ${goalTargetInvalid ? "text-destructive" : ""}`}>
-                    {lang === "ko"
-                      ? (currency === "KRW" ? "목표 금액 (₩)" : "목표 금액 ($)")
-                      : (currency === "KRW" ? "Target (₩)" : "Target ($)")}
-                  </Label>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    defaultValue={goal ? String(currency === "KRW" ? Math.round(goal.targetUsd * krwRate) : goal.targetUsd) : ""}
-                    id="goal-target-input"
-                    className={goalTargetInvalid ? "border-destructive focus-visible:ring-destructive" : ""}
-                    onInput={() => { if (goalTargetInvalid) setGoalTargetInvalid(false) }}
-                  />
-                  {goalTargetInvalid && (
-                    <p className="text-xs text-destructive">
-                      {lang === "ko" ? "목표 금액을 입력해주세요" : "Enter a target amount"}
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">
-                    {lang === "ko" ? "목표 날짜 (선택)" : "Deadline (optional)"}
-                  </Label>
-                  <Input
-                    type="date"
-                    defaultValue={goal?.deadline ? new Date(goal.deadline).toISOString().slice(0, 10) : ""}
-                    id="goal-deadline-input"
-                    className="appearance-none min-w-0"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">
-                    {lang === "ko" ? "계좌 별명 (선택)" : "Account nickname (optional)"}
-                  </Label>
-                  <Input
-                    type="text"
-                    defaultValue={goal?.account ?? ""}
-                    placeholder={lang === "ko" ? "예: 토스 ●●2345" : "e.g. Wealthfront ●●1234"}
-                    maxLength={40}
-                    id="goal-account-input"
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    {lang === "ko" ? "예: \"토스 적금\" — 계좌번호는 적지 마세요" : "e.g. \"Toss Savings\" — never enter full account numbers"}
-                  </p>
-                </div>
-                {/* Shared-goal checkbox (Phase 1: UI scaffold; Phase 2 will wire invite flow) */}
-                <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
-                  <input
-                    type="checkbox"
-                    id="goal-shared-input"
-                    defaultChecked={goal?.type === "shared"}
-                    disabled
-                    className="mt-0.5 h-4 w-4 accent-primary disabled:opacity-50 cursor-not-allowed"
-                  />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-muted-foreground">
-                      {lang === "ko" ? "다른 사람과 공유하기" : "Share with someone"}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {lang === "ko" ? "곧 출시 — 파트너/가족과 함께 저축" : "Coming soon — save together with a partner"}
-                    </div>
-                  </div>
-                </label>
-                <div className="flex gap-2 pt-3">
-                  {goal && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        if (window.confirm(lang === "ko" ? "목표를 삭제할까요?" : "Delete this goal?")) {
-                          deleteGoal()
-                        }
-                      }}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      {lang === "ko" ? "삭제" : "Delete"}
-                    </Button>
-                  )}
-                  <Button variant="outline" className="flex-1" onClick={() => setGoalEditorOpen(false)}>
-                    {lang === "ko" ? "취소" : "Cancel"}
-                  </Button>
-                  <Button className="flex-1" onClick={() => {
-                    const nameInput = document.getElementById("goal-name-input") as HTMLInputElement
-                    const targetInput = document.getElementById("goal-target-input") as HTMLInputElement
-                    const deadlineInput = document.getElementById("goal-deadline-input") as HTMLInputElement
-                    const sharedInput = document.getElementById("goal-shared-input") as HTMLInputElement | null
-                    const selectedIconEl = document.querySelector<HTMLElement>("[data-goal-icon-btn][data-selected=true]")
-                    const iconKey = (selectedIconEl?.dataset.iconKey as GoalIconKey | undefined) ?? goal?.iconKey ?? "target"
-                    const name = nameInput.value.trim() || (lang === "ko" ? "내 목표" : "My goal")
-                    const rawTarget = parseFloat(targetInput.value)
-                    if (!Number.isFinite(rawTarget) || rawTarget <= 0) {
-                      setGoalTargetInvalid(true)
-                      targetInput.focus()
-                      return
-                    }
-                    const targetUsd = currency === "KRW" ? rawTarget / krwRate : rawTarget
-                    const deadlineStr = deadlineInput.value
-                    const deadline = deadlineStr ? new Date(deadlineStr + "T00:00:00").getTime() : undefined
-                    const type: GoalType = sharedInput?.checked ? "shared" : "personal"
-                    const accountInput = document.getElementById("goal-account-input") as HTMLInputElement | null
-                    const account = accountInput?.value.trim() || undefined
-                    saveGoal({ name, iconKey, targetUsd, deadline, type, account })
-                  }}>
-                    {lang === "ko" ? "저장" : "Save"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Edit modal */}
           {editingRecord && (
@@ -2429,68 +1538,6 @@ export default function App() {
                     </div>
                   )
                 })()}
-                {/* Verification destination picker — same data the list-row check writes
-                    to, but with the goal/long-term split visible. Three buttons:
-                    not moved / to goal / to long-term. If no goal exists, the goal
-                    button is hidden so the picker collapses to two states. */}
-                {(() => {
-                  const isRec = editingRecord.type === "recurring"
-                  const dest = getVerifiedDestination(editingRecord, viewMonth.year, viewMonth.month)
-                  const monthLabel = lang === "ko"
-                    ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
-                    : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
-                  const setDest = (d: Destination | null) => setRecordDestination(editingRecord.id, d)
-                  const baseBtn = "flex-1 flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-medium transition-colors"
-                  return (
-                    <div className="space-y-2 rounded-lg border border-border p-3">
-                      <Label className="text-xs">
-                        {lang === "ko" ? "이체 확인" : "Money moved"}
-                        {isRec && <span className="text-muted-foreground"> · {monthLabel}</span>}
-                      </Label>
-                      <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setDest(null)}
-                          className={`${baseBtn} ${dest === null ? "border-foreground bg-muted" : "border-border hover:bg-muted/50"}`}
-                        >
-                          <span className="h-3 w-3 rounded-full border-2 border-muted-foreground/40 flex-shrink-0" />
-                          {lang === "ko" ? "안 옮김" : "Not moved"}
-                        </button>
-                        {goal && (
-                          <button
-                            type="button"
-                            onClick={() => setDest("goal")}
-                            className={`${baseBtn} ${dest === "goal" ? "border-orange-500 bg-orange-50 dark:bg-orange-950/30" : "border-border hover:bg-muted/50"}`}
-                          >
-                            <span className={`h-3 w-3 rounded-full flex items-center justify-center flex-shrink-0 ${goalBg} ${dest === "goal" ? "" : "opacity-50"}`}>
-                              {dest === "goal" && <Check className="h-2 w-2 text-white" strokeWidth={3} />}
-                            </span>
-                            <span className="truncate">{goal.name}</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setDest("long")}
-                          className={`${baseBtn} ${dest === "long" ? `border-foreground/30 ${longBgTint}` : "border-border hover:bg-muted/50"}`}
-                        >
-                          <span className={`h-3 w-3 rounded-full ${longBg} flex items-center justify-center flex-shrink-0 ${dest === "long" ? "" : "opacity-50"}`}>
-                            {dest === "long" && <Check className="h-2 w-2 text-white" strokeWidth={3} />}
-                          </span>
-                          {lang === "ko" ? "장기" : "Long-term"}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        {isRec
-                          ? (lang === "ko"
-                            ? "반복 항목은 매달 따로 체크해요. 옮긴 돈이 어느 버킷에 가는지 선택하세요."
-                            : "Recurring items are checked monthly. Pick which bucket the money went into.")
-                          : (lang === "ko"
-                            ? "옮긴 돈이 단기 목표로 가는지, 장기 저축으로 가는지 선택하세요."
-                            : "Pick whether the moved money goes to the goal or long-term savings.")}
-                      </p>
-                    </div>
-                  )
-                })()}
                 <div className="flex gap-2 pt-3">
                   <Button
                     variant="outline"
@@ -2535,131 +1582,6 @@ export default function App() {
           {/* Delete-with-when modal — for recurring records the user picks the
               cutoff (which weekly occurrence, which day, which month) so weekly
               and daily recurrence stop precisely. Once items get a simple confirm. */}
-          {/* Long-term account editor — small modal opened by tapping the long-term card.
-              Just a free-text label so the user can note which account holds these funds. */}
-          {longTermAccountEditorOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={() => setLongTermAccountEditorOpen(false)}>
-              <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
-                <p className="font-semibold">
-                  {lang === "ko" ? "장기 저축 계좌" : "Long-term account"}
-                </p>
-                <div className="space-y-1">
-                  <Label className="text-xs">
-                    {lang === "ko" ? "계좌 별명 (선택)" : "Account nickname (optional)"}
-                  </Label>
-                  <Input
-                    autoFocus
-                    type="text"
-                    defaultValue={longTermAccount}
-                    placeholder={lang === "ko" ? "예: 토스 ●●2345" : "e.g. Wealthfront ●●1234"}
-                    maxLength={40}
-                    id="lt-account-input"
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    {lang === "ko" ? "예: \"토스 적금\" — 계좌번호는 적지 마세요" : "e.g. \"Toss Savings\" — never enter full account numbers"}
-                  </p>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button variant="outline" className="flex-1" onClick={() => setLongTermAccountEditorOpen(false)}>
-                    {lang === "ko" ? "취소" : "Cancel"}
-                  </Button>
-                  <Button className="flex-1" onClick={() => {
-                    const input = document.getElementById("lt-account-input") as HTMLInputElement
-                    setLongTermAccount(input.value.trim())
-                    setLongTermAccountEditorOpen(false)
-                  }}>
-                    {lang === "ko" ? "저장" : "Save"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Verify destination modal — shown when the user toggles a row's check ON
-              and a goal exists, so they can pick whether the money went to the goal
-              or to long-term savings. If no goal exists, list-row check skips this
-              and writes "long" directly (no choice to make). */}
-          {verifyingRecord && goal && (() => {
-            const r = verifyingRecord
-            const closeModal = () => setVerifyingRecord(null)
-            const currentDest = getVerifiedDestination(r, viewMonth.year, viewMonth.month)
-            const choose = (d: Destination | null) => {
-              setRecordDestination(r.id, d)
-              closeModal()
-            }
-            const GoalIcon = goalIcons[goal.iconKey] ?? Target
-            const monthLabel = lang === "ko"
-              ? `${viewMonth.year}년 ${viewMonth.month + 1}월`
-              : new Date(viewMonth.year, viewMonth.month, 1).toLocaleDateString("en-US", { month: "long" })
-            return (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={closeModal}>
-                <div className="w-full max-w-sm rounded-xl bg-background p-5 shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
-                  <div>
-                    <p className="font-semibold">
-                      {lang === "ko" ? "대신 저축 — 어디로?" : "Saved instead — where?"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1 truncate">
-                      {r.name}{r.type === "recurring" ? ` · ${monthLabel}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={() => choose("goal")}
-                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-orange-500 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors text-left ${currentDest === "goal" ? "border-orange-500 bg-orange-50/50 dark:bg-orange-950/20" : "border-border"}`}
-                    >
-                      <span className={`flex h-10 w-10 items-center justify-center rounded-full ${goalBgTint} ${goalAccent} flex-shrink-0`}>
-                        <GoalIcon className="h-5 w-5" strokeWidth={1.5} />
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm">{goal.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {lang === "ko" ? "단기 목표로" : "To goal"}
-                        </div>
-                      </div>
-                      {currentDest === "goal" && <Check className={`h-4 w-4 flex-shrink-0 ${goalAccent}`} strokeWidth={3} />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => choose("long")}
-                      className={`flex items-center gap-3 rounded-lg border p-4 hover:border-foreground/30 hover:${longBgTint} transition-colors text-left ${currentDest === "long" ? `border-foreground/30 ${longBgTint}` : "border-border"}`}
-                    >
-                      <span className={`flex h-10 w-10 items-center justify-center rounded-full ${longBgTint} ${longAccent} flex-shrink-0`}>
-                        <PiggyBank className="h-5 w-5" strokeWidth={1.5} />
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm">
-                          {lang === "ko" ? "장기 저축" : "Long-term savings"}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {lang === "ko" ? "투자/은퇴용" : "Investment / retirement"}
-                        </div>
-                      </div>
-                      {currentDest === "long" && <Check className={`h-4 w-4 flex-shrink-0 ${longAccent}`} strokeWidth={3} />}
-                    </button>
-                    {/* Lets the user un-mark a transfer without first closing the modal — useful
-                        when correcting a mistaken Goal/Long pick on the same row. */}
-                    {currentDest && (
-                      <button
-                        type="button"
-                        onClick={() => choose(null)}
-                        className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted/50 transition-colors text-left text-xs text-muted-foreground"
-                      >
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-muted-foreground/40 flex-shrink-0" />
-                        <span className="flex-1">
-                          {lang === "ko" ? "이체 표시 해제" : "Unmark as moved"}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                  <Button variant="outline" className="w-full" onClick={closeModal}>
-                    {lang === "ko" ? "취소" : "Cancel"}
-                  </Button>
-                </div>
-              </div>
-            )
-          })()}
-
           {deletingRecord && (() => {
             const r = deletingRecord
             const isRecurring = r.type === "recurring"
